@@ -31,7 +31,7 @@ struct ContentView: View {
                 // Model picker (default + fallbacks)
                 Picker("Model", selection: $selectedModel) {
                     Text("Default (\(router.config.default))").tag("")
-                    ForEach(router.config.fallbackOrder, id: \ .self) { model in
+                    ForEach(router.config.fallbackOrder, id: \.self) { model in
                         Text(model).tag(model)
                     }
                 }

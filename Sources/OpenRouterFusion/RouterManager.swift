@@ -58,32 +58,23 @@ final class RouterManager: ObservableObject {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         // Use a streaming task
-        let task = URLSession.shared.streamTask(with: request)
-        task.resume()
-        var accumulated = ""
-        func readChunk() {
-            task.readData(ofMinLength: 1, maxLength: 65536, timeout: config.timeoutSeconds) { data, atEOF, error in
-                if let error = error { completion(.failure(error)); return }
-                if let data = data, let chunk = String(data: data, encoding: .utf8) {
-                    // Parse SSE lines
-                    for line in chunk.split(separator: "\n") where line.hasPrefix("data:") {
-                        let jsonPart = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                        if jsonPart == "[DONE]" { continue }
-                        if let d = try? JSONSerialization.jsonObject(with: Data(jsonPart.utf8)) as? [String: Any],
-                           let choices = d["choices"] as? [[String: Any]],
-                           let delta = choices.first?["delta"] as? [String: Any],
-                           let content = delta["content"] as? String {
-                            accumulated.append(content)
-                        }
-                    }
-                }
-                if atEOF {
-                    completion(.success(accumulated))
-                } else {
-                    readChunk()
-                }
+        // Simplified request – we fetch the whole response at once (no streaming)
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error { completion(.failure(error)); return }
+            guard let data = data else {
+                completion(.failure(NSError(domain: "Router", code: -3, userInfo: [NSLocalizedDescriptionKey: "No data received"])))
+                return
             }
+            // Parse OpenRouter response (non‑streaming version)
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let content = message["content"] as? String else {
+                completion(.failure(NSError(domain: "Router", code: -4, userInfo: [NSLocalizedDescriptionKey: "Malformed response"])))
+                return
+            }
+            completion(.success(content))
         }
-        readChunk()
+        task.resume()
     }
 }

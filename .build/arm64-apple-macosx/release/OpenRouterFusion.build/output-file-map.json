@@ -39,5 +39,11 @@
     "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor~partial.swiftmodule",
     "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swiftdeps",
     "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.dia"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.dia"
   }
 }

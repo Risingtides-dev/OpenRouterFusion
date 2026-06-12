@@ -1,0 +1,5 @@
+.build/
+*.swiftmodule
+*.swiftdoc
+*.dSYM
+OpenRouterFusion.app/

@@ -48,6 +48,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
         },
         {
@@ -64,7 +68,8 @@
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ConversationStore.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/KeychainHelper.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swift.o",
-        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swift.o"
+        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swift.o",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swift.o"
       ],
       "otherArguments" : [
         "-target",
@@ -146,6 +151,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/Modules/OpenRouterFusion.swiftmodule"
         }
       ],
@@ -156,7 +165,8 @@
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ConversationStore.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/KeychainHelper.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift",
-        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift"
+        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift"
       ],
       "tempsPath" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build",
       "wholeModuleOptimization" : true
@@ -179,6 +189,7 @@
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/KeychainHelper.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift",
+      "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift",
       "-I",
       "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/Modules",
       "-target",
@@ -282,6 +293,10 @@
         {
           "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift"
         }
       ],
       "outputFilePath" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/sources"
@@ -316,6 +331,10 @@
         {
           "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swift.o"
         }
       ],
       "outputFilePath" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.product/Objects.LinkFileList"
