@@ -1,0 +1,43 @@
+{
+  "": {
+    "dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/OpenRouterFusion.d",
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/OpenRouterFusion.o",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/master.swiftdeps"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/App.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/App.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/App~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/App.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/App.dia"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ContentView.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ContentView.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ContentView.dia"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ConversationStore.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ConversationStore.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ConversationStore~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ConversationStore.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ConversationStore.dia"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/KeychainHelper.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/KeychainHelper.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/KeychainHelper~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/KeychainHelper.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/KeychainHelper.dia"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.dia"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.dia"
+  }
+}
