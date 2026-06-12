@@ -3,3 +3,5 @@
 *.swiftdoc
 *.dSYM
 OpenRouterFusion.app/
+DerivedData/
+.swiftpm/

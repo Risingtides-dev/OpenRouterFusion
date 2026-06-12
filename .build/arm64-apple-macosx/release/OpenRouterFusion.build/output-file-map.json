@@ -10,6 +10,12 @@
     "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/App.swiftdeps",
     "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/App.dia"
   },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ChatMessageView.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ChatMessageView.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ChatMessageView~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ChatMessageView.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ChatMessageView.dia"
+  },
   "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ContentView.swift": {
     "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ContentView.swift.o",
     "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ContentView~partial.swiftmodule",
@@ -28,11 +34,29 @@
     "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/KeychainHelper.swiftdeps",
     "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/KeychainHelper.dia"
   },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMComponents.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMComponents.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMComponents~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMComponents.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMComponents.dia"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMTheme.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMTheme.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMTheme~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMTheme.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMTheme.dia"
+  },
   "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift": {
     "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swift.o",
     "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager~partial.swiftmodule",
     "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swiftdeps",
     "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.dia"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.dia"
   },
   "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift": {
     "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swift.o",
@@ -45,5 +69,11 @@
     "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView~partial.swiftmodule",
     "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swiftdeps",
     "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.dia"
+  },
+  "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/DerivedSources/resource_bundle_accessor.swift": {
+    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/resource_bundle_accessor.swift.o",
+    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/resource_bundle_accessor~partial.swiftmodule",
+    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/resource_bundle_accessor.swiftdeps",
+    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/resource_bundle_accessor.dia"
   }
 }

@@ -4,25 +4,29 @@ struct ToolModalView: View {
     @Binding var command: String
     var onRun: (String) -> Void
     @Environment(\.dismiss) var dismiss
+
     var body: some View {
-        VStack(spacing: 12) {
-            Text("Run a shell tool")
-                .font(.headline)
-            TextEditor(text: $command)
-                .frame(minHeight: 80)
-                .border(Color.gray.opacity(0.3))
-                .cornerRadius(6)
+        VStack(spacing: 14) {
+            Text("Run a Shell Tool")
+                .font(.system(size: 16, weight: .bold, design: .default))
+                .foregroundColor(.lrmTextStrong)
+
+            LRMTextEditor(text: $command, placeholder: "Enter shell command…")
+                .frame(minHeight: 100, maxHeight: 200)
+
             HStack {
-                Button("Cancel") { dismiss() }
+                MetalButton("Cancel", variant: .ghost) {
+                    dismiss()
+                }
                 Spacer()
-                Button("Run") {
+                MetalButton("Run", variant: .metal) {
                     onRun(command)
                     dismiss()
                 }
-                .buttonStyle(MetalButtonStyle())
             }
         }
-        .padding()
-        .frame(minWidth: 400, minHeight: 200)
+        .padding(20)
+        .frame(minWidth: 420, minHeight: 240)
+        .background(Color.lrmBackground2)
     }
 }

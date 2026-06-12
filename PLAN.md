@@ -1,59 +1,47 @@
-# OpenRouterFusion — Implementation Plan
+# OpenRouterFusion — LRM SwiftUI Build Plan
 
 ## Goal
-Transform the gpt-oss-120b foundation into a polished native SwiftUI macOS chat app with Liquid Razor Metal UI aesthetic. Fix all compile errors. Build a `.app` bundle.
+Build a native SwiftUI macOS chat app with Liquid Razor Metal UI. The gpt-oss-120b foundation is in place (RouterManager, ConversationStore, KeychainHelper, ToolExecutor, ToolModalView). Now we need to replace the basic SwiftUI UI with full LRM aesthetic and restore true streaming.
 
-## Architecture
+## Current State
+- `Package.swift` — Swift 5.9, macOS 13, executable
+- `App.swift` — minimal SwiftUI App
+- `ContentView.swift` — basic sidebar+chat, WebView fallback, MetalButtonStyle
+- `RouterManager.swift` — uses dataTask (non-streaming), needs async streaming
+- `ConversationStore.swift` — JSON persistence, ChatMessage has role+content
+- `KeychainHelper.swift` — Keychain wrapper
+- `ToolExecutor.swift` — shell command runner
+- `ToolModalView.swift` — basic tool modal
+- `Resources/ModelConfig.json` — all free models
+- `Resources/openrtr-owl/index.html` — LRM HTML reference
 
+## LRM Design Tokens (from liquid-razor-metal-ui CSS)
+
+### Colors
 ```
-OpenRouterFusionApp (App.swift)
-└── ContentView — Split view: Sidebar + ChatArea
-    ├── Sidebar (LiquidPanel)
-    │   ├── API Key (Keychain via SecureField)
-    │   ├── System Prompt (TextEditor)
-    │   ├── Model Picker (Picker from RouterManager.config)
-    │   ├── Clear Chat (MetalButton ghost)
-    │   └── Run Tool (MetalButton metal → opens ToolModalView)
-    └── ChatArea
-        ├── ChatLog (ScrollView + LazyVStack)
-        │   └── ChatMessageView per message
-        │       ├── ModelBadge (shows which model responded)
-        │       ├── MarkdownText (AttributedString rendering)
-        │       └── LRM bubble (user: blue gradient, assistant: liquid surface)
-        └── Composer
-            ├── TextEditor (LRM styled, auto-grow)
-            └── Send/Stop (MetalButton primary)
-```
-
-## LRM Color Tokens → SwiftUI
-
-```swift
-extension Color {
-    static let lrmBackground    = Color(red: 0.043, green: 0.051, blue: 0.063)   // #0b0d10
-    static let lrmBackground2   = Color(red: 0.047, green: 0.067, blue: 0.094)   // #0c1118
-    static let lrmSurface       = Color(red: 0.075, green: 0.086, blue: 0.102).opacity(0.72)
-    static let lrmSurfaceStrong = Color(red: 0.078, green: 0.102, blue: 0.133).opacity(0.88)
-    static let lrmText          = Color(red: 0.753, green: 0.776, blue: 0.800)   // #c0c6cc
-    static let lrmTextStrong    = Color(red: 0.933, green: 0.953, blue: 0.969)   // #eef3f7
-    static let lrmMuted         = Color(red: 0.408, green: 0.443, blue: 0.471)   // #687178
-    static let lrmBorder        = Color(red: 0.753, green: 0.776, blue: 0.800).opacity(0.12)
-    static let lrmBorderStrong  = Color(red: 0.753, green: 0.776, blue: 0.800).opacity(0.28)
-    static let lrmAccent        = Color(red: 0.541, green: 0.518, blue: 1.0)     // #8a84ff
-    static let lrmMetal         = Color(red: 0.847, green: 0.878, blue: 0.910)   // #d8e0e8
-    static let lrmMetalMid      = Color(red: 0.545, green: 0.580, blue: 0.620)   // #8b949e
-    static let lrmMetalDark     = Color(red: 0.188, green: 0.220, blue: 0.271)   // #303845
-    static let lrmDanger        = Color(red: 0.984, green: 0.443, blue: 0.510)   // #fb7185
-}
+--lrm-bg:           #0b0d10  (red:0.043 green:0.051 blue:0.063)
+--lrm-bg-2:         #0c1118  (red:0.047 green:0.067 blue:0.094)
+--lrm-surface:      rgba(19,22,26,0.72)
+--lrm-surface-strong: rgba(20,26,34,0.88)
+--lrm-text:         #c0c6cc  (red:0.753 green:0.776 blue:0.800)
+--lrm-text-strong:  #eef3f7  (red:0.933 green:0.953 blue:0.969)
+--lrm-muted:        #687178  (red:0.408 green:0.443 blue:0.471)
+--lrm-border:       rgba(192,198,204,0.12)
+--lrm-border-strong:rgba(192,198,204,0.28)
+--lrm-accent:       #8a84ff  (red:0.541 green:0.518 blue:1.0)
+--lrm-metal:        #d8e0e8  (red:0.847 green:0.878 blue:0.910)
+--lrm-metal-mid:    #8b949e  (red:0.545 green:0.580 blue:0.620)
+--lrm-metal-dark:   #303845  (red:0.188 green:0.220 blue:0.271)
+--lrm-danger:       #fb7185  (red:0.984 green:0.443 blue:0.510)
 ```
 
-## Chamfer Shape (replaces CSS clip-path)
-
+### Chamfer Shape (replaces CSS clip-path)
 ```swift
 struct ChamferShape: Shape {
     let cornerSize: CGFloat
     func path(in rect: CGRect) -> Path {
         var p = Path()
-        let c = cornerSize
+        let c = min(cornerSize, min(rect.width, rect.height) / 2)
         p.move(to: CGPoint(x: c, y: 0))
         p.addLine(to: CGPoint(x: rect.maxX, y: 0))
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - c))
@@ -66,76 +54,97 @@ struct ChamferShape: Shape {
 }
 ```
 
-## Files to MODIFY
-
-### Package.swift
-- Fix: remove `.process("Resources")` since we only have JSON, use `.copy` or just bundle it
-- Bump to macOS 14 for better SwiftUI support
-
-### RouterManager.swift
-- **Fix compile error**: Replace `URLSession.shared.streamTask(with: request)` with `URLSession.shared.data(for: request)` + manual SSE line parsing on the response data, OR use `URLSession` with `async/await` and `URLSession.bytes(for:)` for true streaming
-- Recommended: Use `URLSession.bytes(for:)` with AsyncSequence for real streaming
-- Add `modelUsed` tracking so we know which model actually responded
-
-### ConversationStore.swift
-- Add `modelUsed: String?` field to `ChatMessage`
-- Add `activeModel: String` tracking
-
-### ContentView.swift
-- Complete rewrite with LRM UI
-- Remove `WebChatView` (no more WebView embedding)
-- Add native `ChatLog` with `LazyVStack`
-- Add `ToolModalView` sheet
-
-### App.swift
-- Keep minimal, add `.windowStyle(.hiddenTitleBar)` for native macOS feel
-
 ## Files to CREATE
 
-### LRMTheme.swift
-- All Color extensions (above)
-- ChamferShape (above)
+### 1. LRMTheme.swift
+- All Color extensions
+- ChamferShape
 - View modifiers: `.liquidSurface()`, `.metalSurface()`, `.lrmBorder()`
-- Gradient definitions: `lrmLiquidGradient`, `lrmMetalGradient`, `lrmAccentGradient`
+- Gradient definitions
 
-### LRMComponents.swift
-- `MetalButton` — ButtonStyle with gradient background, chamfer clip, sweep animation on hover
-- `LiquidPanel` — View wrapper with liquid surface treatment
-- `MetalText` — Uppercase, letter-spaced, weight 850+ text style
-- `StatusBadge` — Small pill badge for model name / streaming status
-- `LRMTextField` — Styled TextField with LRM colors
-- `LRMTextEditor` — Styled TextEditor with LRM colors
+### 2. LRMComponents.swift
+- `MetalButton` — ButtonStyle with gradient, chamfer, hover sweep
+- `LiquidPanel` — View wrapper with liquid surface
+- `StatusBadge` — Small pill for model name / streaming
+- `LRMTextEditor` — Styled TextEditor
+- `LRMSecureField` — Styled SecureField
 
-### ChatMessageView.swift
-- Single chat bubble view
-- Props: `message: ChatMessage`, `isStreaming: Bool`
-- Layout: HStack with avatar + bubble
-- Avatar: Circle with first letter, gradient background (user=blue, assistant=accent)
-- Bubble: Liquid surface for user, metal/liquid panel for assistant
-- Model badge: Small `StatusBadge` showing model name below assistant bubbles
-- Markdown rendering via `AttributedString(markdown:)` on macOS 13+
+### 3. ChatMessageView.swift
+- Single chat bubble with LRM styling
+- Avatar circle (user=blue gradient, assistant=accent gradient)
+- Bubble: liquid surface for user, metal panel for assistant
+- Model badge below assistant bubbles
+- Markdown rendering via AttributedString
 
-### StreamingMarkdownView.swift
-- Takes `@State var rawText: String`
-- Renders as `Text(try! AttributedString(markdown: rawText))`
-- Shows "Thinking…" with pulsing animation when empty
+### 4. StreamingMarkdownView.swift
+- Progressive markdown rendering
+- "Thinking…" pulsing animation when empty
 
-### ToolModalView.swift
-- Modal sheet with command input + run button + output display
-- LRM styled
+## Files to MODIFY
 
-## Build Script (build-app.sh)
-Reference: `/Users/risingtidesdev/dev/floating-terminal/build-app.sh`
-- `swift build -c release`
-- Assemble `OpenRouterFusion.app` bundle
-- Copy binary, Info.plist, ad-hoc codesign
+### 5. ContentView.swift — Complete rewrite
+- Remove WebChatView, useEmbeddedWeb toggle
+- LRM sidebar with LiquidPanel
+- Native chat log with ChatMessageView
+- LRM-styled composer
+- Model picker from RouterManager.config
+
+### 6. RouterManager.swift — Restore streaming
+- Replace dataTask with URLSession.bytes(for:) async streaming
+- Parse SSE chunks in real-time
+- Track which model actually responded
+- Send streaming callbacks to ContentView
+
+### 7. ConversationStore.swift — Add model tracking
+- Add `modelUsed: String?` to ChatMessage
+- Add `activeModel: String` tracking
+
+### 8. App.swift — Polish
+- Add `.windowStyle(.hiddenTitleBar)` for native feel
+- Set default window size
+
+### 9. Package.swift — Bump to macOS 14
+- Needed for better SwiftUI features
+
+## Files to KEEP (no changes)
+- KeychainHelper.swift
+- ToolExecutor.swift
+- ToolModalView.swift (minor LRM styling only)
+- Resources/ModelConfig.json
+
+## Build Script
+Create `build-app.sh` at project root (reference floating-terminal pattern)
+
+## View Hierarchy
+```
+OpenRouterFusionApp
+└── ContentView (LRM background)
+    ├── Sidebar (LiquidPanel, 280pt)
+    │   ├── "API KEY" label (MetalText)
+    │   ├── LRMSecureField
+    │   ├── "SYSTEM PROMPT" label
+    │   ├── LRMTextEditor
+    │   ├── "MODEL" label
+    │   ├── Model Picker
+    │   ├── MetalButton("Run Tool…", .metal)
+    │   ├── Spacer
+    │   └── MetalButton("Clear Chat", .ghost)
+    └── ChatArea
+        ├── ScrollView + LazyVStack
+        │   └── ChatMessageView per message
+        │       ├── Avatar (circle, gradient)
+        │       ├── VStack(bubble + modelBadge)
+        │       └── StreamingMarkdownView
+        └── Composer (LiquidPanel)
+            ├── LRMTextEditor (auto-grow)
+            └── HStack { Send/Stop buttons }
+```
 
 ## Acceptance Criteria
-1. `swift build` compiles with zero errors
+1. `swift build` — zero errors
 2. App launches with LRM dark gunmetal background
-3. Sidebar shows API key field, system prompt, model picker, clear chat
-4. Chat area shows messages with LRM-styled bubbles
-5. Streaming works: tokens appear progressively in assistant bubbles
-6. Model badge shows which model responded
-7. Markdown renders (bold, code, lists, headers)
-8. `bash build-app.sh` produces a working `OpenRouterFusion.app`
+3. Sidebar: API key, system prompt, model picker, clear chat, run tool
+4. Chat: native streaming (tokens appear progressively)
+5. Model badge shows which model responded
+6. Markdown renders (bold, code, lists)
+7. `bash build-app.sh` produces working `.app`

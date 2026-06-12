@@ -1,194 +1,241 @@
 import SwiftUI
-import WebKit
 
 struct ContentView: View {
+    // MARK: - State Objects
     @StateObject private var store = ConversationStore()
     @StateObject private var router = RouterManager()
+
+    // MARK: - Local State
     @State private var userInput = ""
     @State private var systemPrompt = ""
     @State private var isStreaming = false
     @State private var selectedModel = ""
+    @State private var currentStreamingContent = ""
     @State private var showingToolModal = false
     @State private var toolCommand = ""
-    @State private var useEmbeddedWeb = true // toggle to pure SwiftUI if desired
-    
+
     var body: some View {
         HStack(spacing: 0) {
             // MARK: Sidebar ----------------------------------------------------
-            VStack(alignment: .leading, spacing: 16) {
-                // API key field (Keychain)
-                SecureField("OpenRouter API key", text: Binding(
-                    get: { KeychainHelper.shared.get(key: "OpenRouterAPIKey") ?? "" },
-                    set: { KeychainHelper.shared.set($0, for: "OpenRouterAPIKey") }
-                ))
-                .textFieldStyle(.roundedBorder)
-                
-                // System prompt editor
-                TextEditor(text: $systemPrompt)
-                    .frame(height: 80)
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.gray.opacity(0.3)))
-                
-                // Model picker (default + fallbacks)
-                Picker("Model", selection: $selectedModel) {
-                    Text("Default (\(router.config.default))").tag("")
-                    ForEach(router.config.fallbackOrder, id: \.self) { model in
-                        Text(model).tag(model)
-                    }
-                }
-                .pickerStyle(.menu)
-                
-                // Tool runner button
-                Button("Run Tool…") { showingToolModal = true }
-                    .buttonStyle(MetalButtonStyle())
-                
-                Spacer()
-                Button("Clear Chat") { store.clear() }
-                    .foregroundColor(.red)
-            }
-            .padding()
-            .frame(minWidth: 260)
-            .background(Color.black.opacity(0.1))
-            
+            sidebar
+
             Divider()
-            
-            // MARK: Main chat area --------------------------------------------
-            if useEmbeddedWeb {
-                // Embedded the original liquid‑metal HTML UI via WebView
-                WebChatView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                VStack {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 12) {
-                                ForEach(store.messages) { msg in
-                                    HStack {
-                                        if msg.role == .assistant {
-                                            Image(systemName: "sparkles")
-                                                .foregroundColor(.purple)
-                                        } else {
-                                            Image(systemName: "person.fill")
-                                                .foregroundColor(.blue)
-                                        }
-                                        Text(msg.content)
-                                            .padding(8)
-                                            .background(msg.role == .assistant ? Color.purple.opacity(0.15) : Color.blue.opacity(0.1))
-                                            .cornerRadius(8)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: msg.role == .assistant ? .leading : .trailing)
-                                    .id(msg.id)
-                                }
-                                if isStreaming {
-                                    HStack {
-                                        ProgressView()
-                                        Text("Thinking…")
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }
-                            .padding()
-                        }
-                        .onChange(of: store.messages.count) { _ in
-                            withAnimation { proxy.scrollTo(store.messages.last?.id, anchor: .bottom) }
-                        }
-                    }
-                    // Composer
-                    HStack {
-                        TextEditor(text: $userInput)
-                            .frame(minHeight: 40, maxHeight: 120)
-                            .border(Color.gray.opacity(0.3), width: 1)
-                            .cornerRadius(6)
-                        Button(isStreaming ? "Stop" : "Send") {
-                            guard !userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                            sendMessage()
-                        }
-                        .buttonStyle(MetalButtonStyle())
-                        .disabled(isStreaming)
-                    }
-                    .padding()
-                }
-            }
+                .background(Color.lrmBorder)
+
+            // MARK: Main Chat Area --------------------------------------------
+            chatArea
         }
+        .background(
+            ZStack {
+                Color.lrmBackground
+                LinearGradient.lrmBackgroundRadial
+                    .opacity(0.4)
+            }
+            .ignoresSafeArea()
+        )
         .sheet(isPresented: $showingToolModal) {
             ToolModalView(command: $toolCommand, onRun: runTool)
         }
         .onAppear {
-            if let saved = UserDefaults.standard.string(forKey: "systemPrompt") { systemPrompt = saved }
+            if let saved = UserDefaults.standard.string(forKey: "systemPrompt") {
+                systemPrompt = saved
+            }
             selectedModel = router.config.default
         }
-        .onChange(of: systemPrompt) { UserDefaults.standard.set($0, forKey: "systemPrompt") }
+        .onChange(of: systemPrompt) {
+            UserDefaults.standard.set(systemPrompt, forKey: "systemPrompt")
+        }
     }
-    // MARK: Messaging --------------------------------------------------------
-    private func sendMessage() {
-        let prompt = userInput
-        store.append(role: .user, content: prompt)
-        userInput = ""
-        isStreaming = true
-        let messagesArray = store.messages.map { ["role": $0.role.rawValue, "content": $0.content] }
-        router.send(messages: messagesArray, systemPrompt: systemPrompt.isEmpty ? nil : systemPrompt) { result in
-            DispatchQueue.main.async {
-                isStreaming = false
-                switch result {
-                case .success(let txt):
-                    store.append(role: .assistant, content: txt)
-                case .failure(let err):
-                    store.append(role: .assistant, content: "❗️ Error: \(err.localizedDescription)")
+
+    // MARK: Sidebar View
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // API Key
+            MetalText("API KEY")
+            LRMSecureField(text: Binding(
+                get: { KeychainHelper.shared.get(key: "OpenRouterAPIKey") ?? "" },
+                set: { _ = KeychainHelper.shared.set($0, for: "OpenRouterAPIKey") }
+            ))
+            .frame(height: 30)
+
+            // System Prompt
+            MetalText("SYSTEM PROMPT")
+            LRMTextEditor(text: $systemPrompt, placeholder: "You are a helpful assistant…")
+                .frame(minHeight: 80, maxHeight: 120)
+
+            // Model Picker
+            MetalText("MODEL")
+            Picker("Model", selection: $selectedModel) {
+                Text("Default (\(router.config.default))").tag("")
+                ForEach(router.config.fallbackOrder, id: \.self) { model in
+                    Text(model).tag(model)
+                }
+            }
+            .pickerStyle(.menu)
+            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .foregroundColor(.lrmText)
+            .accentColor(.lrmAccent)
+            .frame(height: 28)
+
+            // Run Tool button
+            MetalButton("Run Tool…", variant: .metal) {
+                showingToolModal = true
+            }
+
+            Spacer()
+
+            // Clear Chat
+            MetalButton("Clear Chat", variant: .ghost) {
+                store.clear()
+            }
+        }
+        .padding(16)
+        .frame(width: 280)
+        .background(
+            Color.lrmBackground2.opacity(0.5)
+        )
+    }
+
+    // MARK: Chat Area
+
+    private var chatArea: some View {
+        VStack(spacing: 0) {
+            // Messages
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(store.messages) { msg in
+                            ChatMessageView(message: msg)
+                                .id(msg.id)
+                        }
+
+                        // Streaming message (not yet in store)
+                        if isStreaming {
+                            ChatMessageView(
+                                message: ChatMessage(role: .assistant, content: currentStreamingContent)
+                            )
+                            .id("streaming")
+                        }
+                    }
+                    .padding(.vertical, 16)
+                }
+                .onChange(of: store.messages.count) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        if let last = store.messages.last {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
+                }
+                .onChange(of: currentStreamingContent) {
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        proxy.scrollTo("streaming", anchor: .bottom)
+                    }
+                }
+            }
+
+            Divider()
+                .background(Color.lrmBorder)
+
+            // Composer
+            composer
+        }
+    }
+
+    // MARK: Composer
+
+    private var composer: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            LRMTextEditor(
+                text: $userInput,
+                placeholder: "Message… (Shift+Enter for newline)"
+            )
+                .frame(minHeight: 36, maxHeight: 120)
+            .onSubmit {
+                sendMessage()
+            }
+
+            HStack(spacing: 8) {
+                if isStreaming {
+                    MetalButton("Stop", variant: .ghost) {
+                        // Stop streaming — in current implementation we can't cancel
+                        // the URLSession task, but we mark as done
+                        isStreaming = false
+                        if !currentStreamingContent.isEmpty {
+                            store.append(role: .assistant, content: currentStreamingContent)
+                            currentStreamingContent = ""
+                        }
+                    }
+                } else {
+                    MetalButton("Send", variant: .primary) {
+                        sendMessage()
+                    }
+                    .disabled(userInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
+        .padding(12)
+        .background(
+            Color.lrmSurface.opacity(0.3)
+        )
     }
-    // MARK: Tool execution ---------------------------------------------------
+
+    // MARK: Messaging
+
+    private func sendMessage() {
+        let prompt = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+
+        store.append(role: .user, content: prompt)
+        userInput = ""
+        isStreaming = true
+        currentStreamingContent = ""
+
+        let messagesArray = store.messages.map { ["role": $0.role.rawValue, "content": $0.content] }
+        let sysPrompt = systemPrompt.isEmpty ? nil : systemPrompt
+
+        router.send(
+            messages: messagesArray,
+            systemPrompt: sysPrompt,
+            onChunk: { chunk in
+                DispatchQueue.main.async {
+                    currentStreamingContent += chunk
+                }
+            },
+            completion: { result in
+                DispatchQueue.main.async {
+                    isStreaming = false
+                    switch result {
+                    case .success(let txt):
+                        let finalText = txt.isEmpty ? currentStreamingContent : txt
+                        store.append(role: .assistant, content: finalText)
+                    case .failure(let err):
+                        store.append(role: .assistant, content: "❗️ Error: \(err.localizedDescription)")
+                    }
+                    currentStreamingContent = ""
+                }
+            }
+        )
+    }
+
+    // MARK: Tool Execution
+
     private func runTool(_ cmd: String) {
         ToolExecutor.run("/bin/bash", arguments: ["-c", cmd]) { res in
             DispatchQueue.main.async {
                 switch res {
                 case .success(let out):
                     let toolOutput = """
-🛠 Tool output:
-```
-\(out)
-```
-"""
-store.append(role: .assistant, content: toolOutput)
+                    🛠 Tool output:
+                    ```
+                    \(out)
+                    ```
+                    """
+                    store.append(role: .assistant, content: toolOutput)
                 case .failure(let err):
-                    store.append(role: .assistant, content: "🛠 Tool failed: \(err.localizedDescription)")
+                    store.append(role: .assistant, content: "🛠 Tool failed: \(err.localizedDescription)")
                 }
             }
         }
-    }
-}
-
-// MARK: Embedded WebView ---------------------------------------------------
-struct WebChatView: NSViewRepresentable {
-    func makeNSView(context: Context) -> WKWebView {
-        let wk = WKWebView()
-        let bundle = Bundle.main
-        if let url = bundle.url(forResource: "index", withExtension: "html", subdirectory: "Resources/openrtr-owl") {
-            wk.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-        }
-        return wk
-    }
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
-}
-
-// MARK: Metal button style -------------------------------------------------
-struct MetalButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                ZStack {
-                    LinearGradient(gradient: Gradient(colors: [Color(#colorLiteral(red: 0.49, green: 0.22, blue: 1, alpha: 1)),
-                                                               Color(#colorLiteral(red: 0.33, green: 0.67, blue: 1, alpha: 1))]),
-                                   startPoint: .topLeading,
-                                   endPoint: .bottomTrailing)
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
-                }
-            )
-            .foregroundColor(.white)
-            .cornerRadius(6)
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
     }
 }

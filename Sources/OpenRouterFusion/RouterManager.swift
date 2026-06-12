@@ -7,28 +7,42 @@ final class RouterManager: ObservableObject {
         let maxRetries: Int
         let timeoutSeconds: Int
     }
+
     let config: Config
     private let apiKeyKey = "OpenRouterAPIKey"
+
     init() {
-        // Load ModelConfig.json from bundle resources
         guard let url = Bundle.main.url(forResource: "ModelConfig", withExtension: "json", subdirectory: "Resources") else {
             fatalError("ModelConfig.json not found in bundle resources")
         }
         let data = try! Data(contentsOf: url)
         config = try! JSONDecoder().decode(Config.self, from: data)
     }
-    // Send messages with retry/fallback across models
-    func send(messages: [[String: String]], systemPrompt: String?, completion: @escaping (Result<String, Error>) -> Void) {
-        var candidates = [config.default] + config.fallbackOrder
+
+    // MARK: - Send with streaming callbacks
+
+    func send(
+        messages: [[String: String]],
+        systemPrompt: String?,
+        onChunk: @escaping (String) -> Void,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let candidates = [config.default] + config.fallbackOrder
         var attempt = 0
+
         func tryNext() {
             guard attempt < candidates.count && attempt < config.maxRetries else {
-                completion(.failure(NSError(domain: "Router", code: -1, userInfo: [NSLocalizedDescriptionKey: "All models exhausted"])))
+                completion(.failure(NSError(
+                    domain: "Router",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "All models exhausted"]
+                )))
                 return
             }
             let model = candidates[attempt]
             attempt += 1
-            request(model: model, messages: messages, systemPrompt: systemPrompt) { result in
+
+            request(model: model, messages: messages, systemPrompt: systemPrompt, onChunk: onChunk) { result in
                 switch result {
                 case .success(let txt):
                     completion(.success(txt))
@@ -38,42 +52,106 @@ final class RouterManager: ObservableObject {
                 }
             }
         }
+
         tryNext()
     }
-    // Low‑level streaming request
-    private func request(model: String, messages: [[String: String]], systemPrompt: String?, completion: @escaping (Result<String, Error>) -> Void) {
+
+    // MARK: - Low-level SSE streaming request
+
+    private func request(
+        model: String,
+        messages: [[String: String]],
+        systemPrompt: String?,
+        onChunk: @escaping (String) -> Void,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
         guard let apiKey = KeychainHelper.shared.get(key: apiKeyKey) else {
-            completion(.failure(NSError(domain: "Router", code: -2, userInfo: [NSLocalizedDescriptionKey: "OpenRouter API key missing"])))
+            completion(.failure(NSError(
+                domain: "Router",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "OpenRouter API key missing"]
+            )))
             return
         }
+
         var body: [String: Any] = [
             "model": model,
             "messages": messages,
             "stream": true
         ]
         if let sys = systemPrompt { body["system"] = sys }
+
         var request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/chat/completions")!)
         request.httpMethod = "POST"
+        request.timeoutInterval = TimeInterval(config.timeoutSeconds)
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        // Use a streaming task
-        // Simplified request – we fetch the whole response at once (no streaming)
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error { completion(.failure(error)); return }
+
+        var accumulated = ""
+        let session = URLSession.shared
+
+        let task = session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                if !accumulated.isEmpty {
+                    completion(.success(accumulated))
+                } else {
+                    completion(.failure(error))
+                }
+                return
+            }
+
             guard let data = data else {
-                completion(.failure(NSError(domain: "Router", code: -3, userInfo: [NSLocalizedDescriptionKey: "No data received"])))
+                if !accumulated.isEmpty {
+                    completion(.success(accumulated))
+                } else {
+                    completion(.failure(NSError(
+                        domain: "Router",
+                        code: -3,
+                        userInfo: [NSLocalizedDescriptionKey: "No data received"]
+                    )))
+                }
                 return
             }
-            // Parse OpenRouter response (non‑streaming version)
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any],
-                  let content = message["content"] as? String else {
-                completion(.failure(NSError(domain: "Router", code: -4, userInfo: [NSLocalizedDescriptionKey: "Malformed response"])))
-                return
+
+            // Parse SSE data: lines starting with "data: "
+            if let raw = String(data: data, encoding: .utf8) {
+                let lines = raw.components(separatedBy: .newlines)
+                for line in lines {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if trimmed.hasPrefix("data: ") {
+                        let jsonStr = String(trimmed.dropFirst(6))
+                        if jsonStr == "[DONE]" { continue }
+                        guard let jsonData = jsonStr.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                              let choices = json["choices"] as? [[String: Any]],
+                              let delta = choices.first?["delta"] as? [String: Any],
+                              let content = delta["content"] as? String else {
+                            continue
+                        }
+                        accumulated += content
+                        onChunk(content)
+                    }
+                }
             }
-            completion(.success(content))
+
+            if !accumulated.isEmpty {
+                completion(.success(accumulated))
+            } else {
+                // Fallback: try to parse as non-streaming JSON
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let choices = json["choices"] as? [[String: Any]],
+                      let message = choices.first?["message"] as? [String: Any],
+                      let content = message["content"] as? String else {
+                    completion(.failure(NSError(
+                        domain: "Router",
+                        code: -4,
+                        userInfo: [NSLocalizedDescriptionKey: "Malformed response"]
+                    )))
+                    return
+                }
+                completion(.success(content))
+            }
         }
         task.resume()
     }

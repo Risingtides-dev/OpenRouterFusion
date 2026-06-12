@@ -3,7 +3,20 @@
 
   ],
   "copyCommands" : {
-
+    "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/Resources" : {
+      "inputs" : [
+        {
+          "kind" : "directory",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources"
+        }
+      ],
+      "outputs" : [
+        {
+          "kind" : "directory",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/Resources"
+        }
+      ]
+    }
   },
   "explicitTargetDependencyImportCheckingMode" : {
     "none" : {
@@ -28,6 +41,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ChatMessageView.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ContentView.swift"
         },
         {
@@ -40,7 +57,19 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMComponents.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMTheme.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift"
         },
         {
           "kind" : "file",
@@ -52,7 +81,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/DerivedSources/resource_bundle_accessor.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<OpenRouterFusion-arm64-apple-macosx26.0-release.module-resources>"
         },
         {
           "kind" : "file",
@@ -64,16 +101,21 @@
       "moduleOutputPath" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/Modules/OpenRouterFusion.swiftmodule",
       "objects" : [
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/App.swift.o",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ChatMessageView.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ContentView.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ConversationStore.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/KeychainHelper.swift.o",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMComponents.swift.o",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMTheme.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swift.o",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swift.o",
-        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swift.o"
+        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swift.o",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/resource_bundle_accessor.swift.o"
       ],
       "otherArguments" : [
         "-target",
-        "arm64-apple-macosx13.0",
+        "arm64-apple-macosx14.0",
         "-whole-module-optimization",
         "-num-threads",
         "10",
@@ -81,7 +123,7 @@
         "-O",
         "-j10",
         "-DSWIFT_PACKAGE",
-        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE",
         "-module-cache-path",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/ModuleCache",
         "-parseable-output",
@@ -131,6 +173,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ChatMessageView.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ContentView.swift.o"
         },
         {
@@ -143,7 +189,19 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMComponents.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMTheme.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swift.o"
         },
         {
           "kind" : "file",
@@ -155,18 +213,27 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/resource_bundle_accessor.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/Modules/OpenRouterFusion.swiftmodule"
         }
       ],
       "prepareForIndexing" : false,
       "sources" : [
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/App.swift",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ChatMessageView.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ContentView.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ConversationStore.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/KeychainHelper.swift",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMComponents.swift",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMTheme.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift",
-        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift"
+        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift",
+        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/DerivedSources/resource_bundle_accessor.swift"
       ],
       "tempsPath" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build",
       "wholeModuleOptimization" : true
@@ -184,16 +251,21 @@
       "openrouterfusion",
       "-c",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/App.swift",
+      "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ChatMessageView.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ContentView.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ConversationStore.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/KeychainHelper.swift",
+      "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMComponents.swift",
+      "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMTheme.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift",
+      "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift",
+      "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/DerivedSources/resource_bundle_accessor.swift",
       "-I",
       "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/Modules",
       "-target",
-      "arm64-apple-macosx13.0",
+      "arm64-apple-macosx14.0",
       "-whole-module-optimization",
       "-num-threads",
       "10",
@@ -201,7 +273,7 @@
       "-O",
       "-j10",
       "-DSWIFT_PACKAGE",
-      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE",
       "-module-cache-path",
       "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/ModuleCache",
       "-parseable-output",
@@ -276,6 +348,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ChatMessageView.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ContentView.swift"
         },
         {
@@ -288,7 +364,19 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMComponents.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMTheme.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift"
         },
         {
           "kind" : "file",
@@ -297,6 +385,10 @@
         {
           "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/DerivedSources/resource_bundle_accessor.swift"
         }
       ],
       "outputFilePath" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/sources"
@@ -314,6 +406,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ChatMessageView.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ContentView.swift.o"
         },
         {
@@ -326,7 +422,19 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMComponents.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMTheme.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swift.o"
         },
         {
           "kind" : "file",
@@ -335,6 +443,10 @@
         {
           "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/resource_bundle_accessor.swift.o"
         }
       ],
       "outputFilePath" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.product/Objects.LinkFileList"
