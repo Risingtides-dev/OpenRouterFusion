@@ -12,10 +12,17 @@ final class RouterManager: ObservableObject {
     private let apiKeyKey = "OpenRouterAPIKey"
 
     init() {
-        guard let url = Bundle.main.url(forResource: "ModelConfig", withExtension: "json", subdirectory: "Resources") else {
-            fatalError("ModelConfig.json not found in bundle resources")
+        // Search multiple locations for ModelConfig.json
+        let candidates = [
+            Bundle.main.url(forResource: "ModelConfig", withExtension: "json"),
+            Bundle.main.url(forResource: "ModelConfig", withExtension: "json", subdirectory: "Resources"),
+            Bundle.main.resourceURL?.appendingPathComponent("ModelConfig.json"),
+            Bundle.main.resourceURL?.appendingPathComponent("Resources/ModelConfig.json"),
+        ]
+        guard let url = candidates.compactMap({ $0 }).first,
+              let data = try? Data(contentsOf: url) else {
+            fatalError("ModelConfig.json not found in bundle resources. Searched: \(candidates.compactMap { $0?.path })")
         }
-        let data = try! Data(contentsOf: url)
         config = try! JSONDecoder().decode(Config.self, from: data)
     }
 

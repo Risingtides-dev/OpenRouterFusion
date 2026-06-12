@@ -26,11 +26,17 @@ commands:
     outputs: ["/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.product/Objects.LinkFileList"]
     description: "Write auxiliary file /Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.product/Objects.LinkFileList"
 
-  "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/Resources":
+  "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/ModelConfig.json":
     tool: copy-tool
-    inputs: ["/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources/"]
-    outputs: ["/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/Resources/"]
-    description: "Copying /Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources"
+    inputs: ["/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources/ModelConfig.json"]
+    outputs: ["/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/ModelConfig.json"]
+    description: "Copying /Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources/ModelConfig.json"
+
+  "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/index.html":
+    tool: copy-tool
+    inputs: ["/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources/openrtr-owl/index.html"]
+    outputs: ["/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/index.html"]
+    description: "Copying /Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources/openrtr-owl/index.html"
 
   "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt":
     tool: write-auxiliary-file
@@ -65,7 +71,7 @@ commands:
 
   "OpenRouterFusion-arm64-apple-macosx26.0-release.module-resources":
     tool: phony
-    inputs: ["/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/Resources/"]
+    inputs: ["/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/ModelConfig.json","/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/index.html"]
     outputs: ["<OpenRouterFusion-arm64-apple-macosx26.0-release.module-resources>"]
 
   "PackageStructure":

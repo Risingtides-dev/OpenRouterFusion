@@ -3,17 +3,31 @@
 
   ],
   "copyCommands" : {
-    "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/Resources" : {
+    "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/ModelConfig.json" : {
       "inputs" : [
         {
-          "kind" : "directory",
-          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources"
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources/ModelConfig.json"
         }
       ],
       "outputs" : [
         {
-          "kind" : "directory",
-          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/Resources"
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/ModelConfig.json"
+        }
+      ]
+    },
+    "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/index.html" : {
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/Resources/openrtr-owl/index.html"
+        }
+      ],
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion_OpenRouterFusion.bundle/index.html"
         }
       ]
     }

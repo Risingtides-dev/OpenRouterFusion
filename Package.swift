@@ -12,7 +12,7 @@ let package = Package(
         .executableTarget(
             name: "OpenRouterFusion",
             dependencies: [],
-            resources: [.copy("Resources")]
+            resources: [.process("Resources")]
         )
     ],
     swiftLanguageModes: [.v5]
