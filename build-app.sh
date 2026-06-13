@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build OpenRouterFusion.app — a native SwiftUI macOS chat client
+# Build OpenRouterFusion.app — native SwiftUI macOS chat client
 set -eo pipefail
 cd "$(dirname "$0")"
 
@@ -12,10 +12,11 @@ swift build -c release
 echo "Assembling ${APP}..."
 rm -rf "${APP}"
 mkdir -p "${CONTENTS}/MacOS" "${CONTENTS}/Resources"
+
 cp ".build/release/OpenRouterFusion" "${CONTENTS}/MacOS/OpenRouterFusion"
 
 # Copy Resources (ModelConfig.json + openrtr-owl)
-cp -R Resources/* "${CONTENTS}/Resources/"
+cp -R Resources/* "${CONTENTS}/Resources/" 2>/dev/null || true
 
 cat > "${CONTENTS}/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -25,8 +26,8 @@ cat > "${CONTENTS}/Info.plist" <<'PLIST'
     <key>CFBundleName</key>              <string>OpenRouterFusion</string>
     <key>CFBundleDisplayName</key>       <string>OpenRouterFusion</string>
     <key>CFBundleIdentifier</key>        <string>dev.risingtides.openrouter-fusion</string>
-    <key>CFBundleVersion</key>           <string>1</string>
-    <key>CFBundleShortVersionString</key><string>0.1</string>
+    <key>CFBundleVersion</key>           <string>2</string>
+    <key>CFBundleShortVersionString</key><string>0.2</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
     <key>CFBundleExecutable</key>        <string>OpenRouterFusion</string>
     <key>LSMinimumSystemVersion</key>    <string>14.0</string>

@@ -5,3 +5,5 @@
 OpenRouterFusion.app/
 DerivedData/
 .swiftpm/
+tool-server.cjs
+tool-server.mjs

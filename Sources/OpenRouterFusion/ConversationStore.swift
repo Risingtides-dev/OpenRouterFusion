@@ -4,7 +4,7 @@ struct ChatMessage: Identifiable, Codable {
     var id = UUID()
     var role: Role
     var content: String
-    var modelUsed: String?          // which model produced this message
+    var modelUsed: String?
     enum Role: String, Codable { case user, assistant }
 }
 
@@ -20,18 +20,22 @@ final class ConversationStore: ObservableObject {
 
     init() { load() }
 
-    // MARK: - Persistence ------------------------------------------------------
-
     private func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        messages = (try? JSONDecoder().decode([ChatMessage].self, from: data)) ?? []
+        guard let decoded = try? JSONDecoder().decode([ChatMessage].self, from: data) else {
+            // Corrupted file — back it up and start fresh
+            let backup = fileURL.appendingPathExtension("bak")
+            try? FileManager.default.moveItem(at: fileURL, to: backup)
+            print("⚠️ conversation.json was corrupted, backed up to \(backup.lastPathComponent)")
+            return
+        }
+        messages = decoded
     }
 
     func save() {
-        try? JSONEncoder().encode(messages).write(to: fileURL, options: .atomic)
+        guard let data = try? JSONEncoder().encode(messages) else { return }
+        try? data.write(to: fileURL, options: .atomic)
     }
-
-    // MARK: - Mutations -------------------------------------------------------
 
     func append(role: ChatMessage.Role, content: String, modelUsed: String? = nil) {
         messages.append(ChatMessage(role: role, content: content, modelUsed: modelUsed))
