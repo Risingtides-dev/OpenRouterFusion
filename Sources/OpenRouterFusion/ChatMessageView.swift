@@ -5,6 +5,9 @@ import SwiftUI
 struct ChatMessageView: View {
     let message: ChatMessage
     var isStreaming: Bool = false
+    
+    // Cache parsed markdown to avoid re-parsing on every render
+    @State private var cachedAttributedContent: AttributedString?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -25,6 +28,12 @@ struct ChatMessageView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
+        .onAppear {
+            // Pre-parse markdown once to avoid re-parsing on every render
+            if message.role == .assistant && cachedAttributedContent == nil {
+                cachedAttributedContent = parseMarkdown()
+            }
+        }
     }
 
     // MARK: Avatar
@@ -112,24 +121,8 @@ struct ChatMessageView: View {
 
     @ViewBuilder
     private var markdownContent: some View {
-        let attributed: AttributedString = {
-            do {
-                var options = AttributedString.MarkdownParsingOptions()
-                options.allowsExtendedAttributes = true
-                let parsed = try AttributedString(
-                    markdown: message.content,
-                    options: options
-                )
-                var result = parsed
-                result.foregroundColor = Color.lrmText
-                return result
-            } catch {
-                var fallback = AttributedString(message.content)
-                fallback.foregroundColor = Color.lrmText
-                return fallback
-            }
-        }()
-
+        let attributed = cachedAttributedContent ?? parseMarkdown()
+        
         Text(attributed)
             .font(.system(size: 14))
             .textSelection(.enabled)
@@ -155,6 +148,24 @@ struct ChatMessageView: View {
             .clipShape(ChamferShape(cornerSize: 10))
     }
 
+    private func parseMarkdown() -> AttributedString {
+        do {
+            var options = AttributedString.MarkdownParsingOptions()
+            options.allowsExtendedAttributes = true
+            let parsed = try AttributedString(
+                markdown: message.content,
+                options: options
+            )
+            var result = parsed
+            result.foregroundColor = Color.lrmText
+            return result
+        } catch {
+            var fallback = AttributedString(message.content)
+            fallback.foregroundColor = Color.lrmText
+            return fallback
+        }
+    }
+    
     private var streamingIndicator: some View {
         HStack(spacing: 6) {
             PulsingDots()

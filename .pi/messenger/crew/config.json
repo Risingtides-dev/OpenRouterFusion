@@ -1,0 +1,21 @@
+{
+  "concurrency": {
+    "workers": 3,
+    "max": 6
+  },
+  "models": {
+    "worker": "openrouter/owl-alpha",
+    "planner": "openrouter/owl-alpha",
+    "reviewer": "openrouter/owl-alpha",
+    "analyst": "openrouter/owl-alpha"
+  },
+  "coordination": "moderate",
+  "planning": {
+    "maxPasses": 1
+  },
+  "work": {
+    "maxWaves": 50,
+    "maxAttemptsPerTask": 3,
+    "stopOnBlock": false
+  }
+}

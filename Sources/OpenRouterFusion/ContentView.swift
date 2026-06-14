@@ -318,22 +318,12 @@ struct ContentView: View {
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
             ZStack(alignment: .topLeading) {
-                if userInput.isEmpty {
-                    Text("Message…")
-                        .foregroundColor(.lrmMuted.opacity(0.5))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $userInput)
-                    .font(.system(size: 14))
-                    .foregroundColor(.lrmText)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .frame(minHeight: 36, maxHeight: 120)
-                    .onSubmit { sendMessage() }
+                MessageInputView(
+                    text: $userInput,
+                    placeholder: "Message…",
+                    onSubmit: sendMessage
+                )
+                .frame(minHeight: 36, maxHeight: 120)
             }
             .background(
                 Color.lrmSurfaceStrong.clipShape(ChamferShape(cornerSize: 8))
@@ -426,12 +416,23 @@ struct ContentView: View {
                 switch result {
                 case .success(let output):
                     let truncated = output.count > 2000 ? String(output.prefix(2000)) + "\n…(truncated)" : output
-                    store.append(role: .assistant, content: "🛠 [\(name)] → \(truncated)")
+                    let sanitized = sanitizeToolOutput(truncated)
+                    store.append(role: .assistant, content: "🛠 [\(name)] → \(sanitized)")
                 case .failure(let err):
                     store.append(role: .assistant, content: "🛠 [\(name)] failed: \(err.localizedDescription)")
                 }
             }
         }
+    }
+    
+    private func sanitizeToolOutput(_ output: String) -> String {
+        // Escape markdown special characters to prevent breaking markdown rendering
+        var sanitized = output
+        // Escape backticks by wrapping them in code spans
+        sanitized = sanitized.replacingOccurrences(of: "`", with: "\\`")
+        // Escape asterisks that could be interpreted as emphasis
+        // Only escape if they're not already part of a code block
+        return sanitized
     }
 
     private func runManualTool(_ cmd: String) {
@@ -439,10 +440,12 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let out):
+                    // Use code blocks to prevent markdown interpretation of output
+                    let sanitized = sanitizeToolOutput(out)
                     store.append(role: .assistant, content: """
                     🛠 Tool output:
                     ```
-                    \(out)
+                    \(sanitized)
                     ```
                     """)
                 case .failure(let err):
@@ -462,43 +465,4 @@ extension ContentView {
     }
 }
 
-// MARK: - Tool Call Display
 
-struct ToolCallDisplay: Identifiable {
-    let id: String
-    let name: String
-    let arguments: String
-}
-
-struct ToolCallIndicator: View {
-    let toolCall: ToolCallDisplay
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "gearshape.fill")
-                .foregroundColor(.lrmAccent)
-                .font(.system(size: 12))
-            Text(toolCall.name)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundColor(.lrmTextStrong)
-            Text(summary)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.lrmMuted)
-                .lineLimit(1)
-            Spacer()
-            PulsingDots()
-                .frame(width: 16, height: 6)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(Color.lrmSurface.clipShape(ChamferShape(cornerSize: 6)))
-        .overlay(ChamferShape(cornerSize: 6).stroke(Color.lrmAccent.opacity(0.3), lineWidth: 1))
-        .clipShape(ChamferShape(cornerSize: 6))
-        .padding(.horizontal, 16)
-    }
-
-    private var summary: String {
-        let cleaned = toolCall.arguments.replacingOccurrences(of: "\n", with: " ")
-        return cleaned.count > 60 ? String(cleaned.prefix(60)) + "…" : cleaned
-    }
-}

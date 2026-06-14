@@ -76,15 +76,18 @@ final class RouterManager: ObservableObject {
         ]
         let searchedPaths = candidates.compactMap { $0?.path }
         guard let url = candidates.compactMap({ $0 }).first else {
-            print("⚠️ ModelConfig.json not found at: \(searchedPaths). Using defaults.")
+            NSLog("⚠️ ModelConfig.json not found at: \(searchedPaths). Using defaults.")
             config = Config(default: "openrouter/owl-alpha", fallbackOrder: [
                 "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
                 "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free"
             ], maxRetries: 4, timeoutSeconds: 30)
             return
         }
-        guard let data = try? Data(contentsOf: url) else {
-            print("⚠️ Could not read ModelConfig.json data. Using defaults.")
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            NSLog("⚠️ Could not read ModelConfig.json data: \(error.localizedDescription). Using defaults.")
             config = Config(default: "openrouter/owl-alpha", fallbackOrder: [
                 "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
                 "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free"
@@ -94,7 +97,7 @@ final class RouterManager: ObservableObject {
         do {
             config = try JSONDecoder().decode(Config.self, from: data)
         } catch {
-            print("⚠️ ModelConfig.json decode failed: \(error). Using defaults.")
+            NSLog("⚠️ ModelConfig.json decode failed: \(error). Using defaults.")
             config = Config(default: "openrouter/owl-alpha", fallbackOrder: [
                 "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
                 "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free"
@@ -132,44 +135,53 @@ final class RouterManager: ObservableObject {
         inFlight = true
         taskLock.unlock()
 
-        let candidates = [config.default] + config.fallbackOrder
-        var attempt = 0
-        var lastError: Error?
+        // Launch retry loop in a Task (non-blocking, allows send() to remain non-async)
+        Task { [weak self] in
+            let candidates = [self?.config.default ?? "openrouter/owl-alpha"] + (self?.config.fallbackOrder ?? [])
+            var attempt = 0
+            var lastError: Error?
 
-        func tryNext() {
-            guard attempt < candidates.count && attempt < config.maxRetries else {
-                self.inFlight = false
-                completion(.failure(lastError ?? RouterError.allModelsExhausted))
-                return
-            }
-            let model = candidates[attempt]
-            attempt += 1
+            /// Iterative retry loop — avoids unbounded recursion on deep fallback chains
+            while attempt < candidates.count && attempt < (self?.config.maxRetries ?? 4) {
+                let model = candidates[attempt]
+                attempt += 1
 
-            streamRequest(
-                model: model, messages: messages,
-                systemPrompt: systemPrompt, tools: tools,
-                onChunk: onChunk, onToolCall: onToolCall
-            ) { [weak self] result in
-                switch result {
-                case .success(let txt):
-                    self?.modelUsed = model
-                    self?.inFlight = false
-                    completion(.success(txt))
-                case .failure(let err):
-                    lastError = err
-                    // Short-circuit for non-retryable errors (auth, API key, cancellation)
-                    if let routerErr = err as? RouterError, !routerErr.isRetryable {
-                        self?.inFlight = false
-                        completion(.failure(routerErr))
-                        return
+                let shouldContinue: Bool = await withCheckedContinuation { continuation in
+                    self?.streamRequest(
+                        model: model, messages: messages,
+                        systemPrompt: systemPrompt, tools: tools,
+                        onChunk: onChunk, onToolCall: onToolCall
+                    ) { [weak self] result in
+                        switch result {
+                        case .success(let txt):
+                            self?.modelUsed = model
+                            self?.inFlight = false
+                            completion(.success(txt))
+                            continuation.resume(returning: false) // stop loop
+                        case .failure(let err):
+                            lastError = err
+                            // Short-circuit for non-retryable errors (auth, API key, cancellation)
+                            if let routerErr = err as? RouterError, !routerErr.isRetryable {
+                                self?.inFlight = false
+                                completion(.failure(routerErr))
+                                continuation.resume(returning: false) // stop loop
+                                return
+                            }
+                            NSLog("⚠️ Model \(model) failed: \(err.localizedDescription); retrying…")
+                            continuation.resume(returning: true) // continue loop
+                        }
                     }
-                    print("⚠️ Model \(model) failed: \(err.localizedDescription); retrying…")
-                    tryNext()
+                }
+
+                if !shouldContinue {
+                    return
                 }
             }
-        }
 
-        tryNext()
+            // All candidates exhausted or maxRetries reached
+            self?.inFlight = false
+            completion(.failure(lastError ?? RouterError.allModelsExhausted))
+        }
     }
 
     // MARK: - True SSE streaming via URLSession.bytes(for:)
@@ -274,7 +286,7 @@ final class RouterManager: ObservableObject {
 
                     // Guard against unbounded buffer growth (malformed data without newlines)
                     if dataBuffer.count > maxBufferSize {
-                        print("⚠️ SSE buffer exceeded limit (\(dataBuffer.count) bytes); discarding malformed stream")
+                        NSLog("⚠️ SSE buffer exceeded limit (\(dataBuffer.count) bytes); discarding malformed stream")
                         dataBuffer = Data()
                         continue
                     }
@@ -321,7 +333,7 @@ final class RouterManager: ObservableObject {
                                 if toolCalls[index] == nil {
                                     toolCalls[index] = [:]
                                 }
-                                // Safe force unwrap: we just ensured the key exists above
+                                // Safe optional chaining: we just ensured the key exists above
                                 guard toolCalls[index] != nil else { continue }
                                 
                                 if let id = deltaTool["id"] as? String {
