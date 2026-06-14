@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct OpenRouterFusionApp: App {
-    @State private var showSessions = false
+    @Environment(\.openWindow) private var openWindow
     
     var body: some Scene {
         WindowGroup {
@@ -16,7 +16,7 @@ struct OpenRouterFusionApp: App {
             CommandGroup(after: .newItem) {
                 Divider()
                 Button("Pi Sessions") {
-                    showSessions = true
+                    openWindow(id: "pi-sessions")
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
                 
@@ -36,6 +36,7 @@ struct OpenRouterFusionApp: App {
         Window("Pi Sessions", id: "pi-sessions") {
             SessionsListView()
         }
+        .defaultSize(width: 680, height: 500)
         .keyboardShortcut("l", modifiers: [.command, .shift])
     }
 }
