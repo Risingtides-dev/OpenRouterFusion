@@ -1,505 +1,450 @@
-# OpenRouterFusion — Architecture Review
+# Architecture Review: OpenRouterFusion
 
-**Date:** 2026-06-13
-**Reviewer:** OWL (Architect role)
-**Scope:** All `.swift` files in `Sources/OpenRouterFusion/`, `Package.swift`, `Resources/`, and build output
+**Date:** 2026-06-14  
+**Reviewer:** crew-worker (task-9)  
+**Scope:** File organization, separation of concerns, data flow, networking layer, UI layering  
+**Based on:** REVIEW.md code quality assessment
 
 ---
 
-## 1. Architecture Overview
+## Current Architecture Summary
 
-### File Inventory (10 Swift files)
-
-| File | Lines | Role |
-|------|-------|------|
-| `App.swift` | ~42 | App entry point, window config, keyboard shortcut commands |
-| `ContentView.swift` | ~330 | Main view: sidebar, chat log, composer, messaging, tool execution |
-| `ConversationStore.swift` | ~48 | Data model + JSON persistence for chat messages |
-| `RouterManager.swift` | ~210 | Networking: SSE streaming, model fallback, HTTP parsing |
-| `KeychainHelper.swift` | ~40 | Keychain read/write/delete for API key |
-| `ToolExecutor.swift` | ~30 | Shell command execution with timeout |
-| `ToolModalView.swift` | ~40 | Modal sheet for manual tool input |
-| `ChatMessageView.swift` | ~180 | Chat bubble with avatar, markdown, streaming indicator |
-| `StreamingMarkdownView.swift` | ~45 | Progressive markdown rendering (mostly unused) |
-| `LRMComponents.swift` | ~290 | Reusable UI: MetalButton, PulsingDots, LRMTextEditor, LRMSecureField, StatusBadge |
-| `LRMTheme.swift` | ~120 | Design tokens: Color extensions, gradients, ChamferShape, view modifiers |
-
-### Dependency Graph
+### Layer Stack
 
 ```
-App.swift
-  └── ContentView
-        ├── ConversationStore (data + persistence)
-        ├── RouterManager (networking + streaming)
-        │     └── KeychainHelper (API key)
-        ├── ToolExecutor (shell commands)
-        ├── ToolModalView (tool UI)
-        ├── ChatMessageView (message rendering)
-        │     └── LRMComponents (UI primitives)
-        ├── StreamingMarkdownView (unused markdown renderer)
-        └── LRMTheme (design tokens)
+┌─────────────────────────────────────────────┐
+│ Presentation Layer (SwiftUI Views)          │
+│ ├─ App.swift (entry point, menus)           │
+│ ├─ ContentView.swift (thin shell)           │
+│ ├─ SidebarView, ChatLogView, ComposerView   │
+│ ├─ ChatMessageView, EmptyStateView          │
+│ └─ Supporting: ToolModalView, LRMComponents │
+├─────────────────────────────────────────────┤
+│ Business Logic Layer                        │
+│ ├─ ChatViewModel (state & command routing)  │
+│ └─ ToolExecutor (process execution)         │
+├─────────────────────────────────────────────┤
+│ Data/Service Layer                          │
+│ ├─ RouterManager (OpenRouter API, SSE)      │
+│ └─ ConversationStore (message persistence)  │
+├─────────────────────────────────────────────┤
+│ Infrastructure Layer                        │
+│ ├─ KeychainHelper (secure storage)          │
+│ ├─ LRMTheme (design tokens)                 │
+│ └─ Utilities: Debouncer, ModelNamer         │
+└─────────────────────────────────────────────┘
 ```
 
----
-
-## 2. Separation of Concerns Analysis
-
-### What's Well-Separated
-
-1. **Theme system is excellent.** `LRMTheme.swift` cleanly isolates all design tokens (colors, gradients, shapes, view modifiers). No view directly hardcodes a color value — everything goes through `Color.lrmAccent`, `LinearGradient.lrmAccentGradient`, etc. This is textbook design-token architecture.
-
-2. **KeychainHelper is a clean wrapper.** Single-responsibility, stateless, no business logic. The `shared` singleton pattern is appropriate for a keychain utility.
-
-3. **ToolExecutor is isolated.** Shell execution is completely separate from UI. The completion-handler API is clean. No UI code leaks in.
-
-4. **ModelConfig.json externalization.** Model routing config is externalized to a JSON file, not hardcoded. This is good — adding/removing models requires zero code changes.
-
-### What's Tangled
-
-1. **ContentView is a 330-line God View.** It owns:
-   - Sidebar UI (API key, system prompt, model picker, clear button)
-   - Chat log (scroll view, message list, streaming indicator)
-   - Composer (text input, send/stop buttons)
-   - Empty state (logo, quick-start guide)
-   - Messaging logic (`sendMessage()`)
-   - Tool execution (`executeTool()`, `runManualTool()`)
-   - Keyboard shortcut handling (`clearChatShortcut()`)
-   - `ToolCallDisplay` model + `ToolCallIndicator` view
-   - `friendlyModelName()` utility function
-
-   This is the single biggest architectural problem. ContentView is simultaneously a view, a view model, a network coordinator, and a tool runner.
-
-2. **Markdown rendering is duplicated.** `ChatMessageView.markdownContent` (lines ~115–128) and `StreamingMarkdownView.renderedText` (lines ~28–35) both parse markdown via `AttributedString(markdown:)` with different options. `StreamingMarkdownView` is defined but never actually used in the view hierarchy — `ChatMessageView` renders its own markdown inline. This is dead code that creates confusion.
-
-3. **RouterManager mixes networking with retry logic.** The `send()` method handles both SSE streaming *and* model fallback orchestration. The `streamRequest()` method handles both HTTP request construction *and* byte-level SSE parsing. These are three distinct responsibilities (request building, SSE parsing, retry orchestration) in two methods.
-
-4. **ConversationStore mixes model and persistence.** `ChatMessage` (the model) is defined inside `ConversationStore.swift` (the persistence layer). The model should be independently importable. Other files that reference `ChatMessage` must import the store, creating a false dependency.
-
-5. **ToolCallDisplay is in ContentView.** This model type and its `ToolCallIndicator` view are defined at the bottom of `ContentView.swift` (lines ~340–380). They're not reusable and should live in their own file or alongside `ToolExecutor`.
-
----
-
-## 3. Data Flow Analysis
-
-### Current Flow
+### Data Flow
 
 ```
-User types message → ContentView.sendMessage()
-  → store.append(user message)
-  → router.send(messages, systemPrompt, tools,
-      onChunk: { currentStreamingContent += chunk },
-      onToolCall: { executeTool(...) },
-      completion: { store.append(assistant message) }
-    )
-    → RouterManager.streamRequest(model, messages, ...)
-      → URLSession.bytes(for: request)
-      → parse SSE chunks byte-by-byte
-      → fire onChunk/onToolCall/completion callbacks
-  → ContentView.executeTool(id, name, args)
-    → ToolExecutor.run("/bin/bash", ["-c", args])
-    → store.append(tool result)
+User Input (TextEditor)
+  ↓
+ChatViewModel.sendMessage()
+  ├─ Append to ConversationStore
+  ├─ Publish to RouterManager.send()
+  │   ├─ Streaming bytes via URLSession.bytes()
+  │   ├─ SSE line parsing with data buffering
+  │   └─ [weak self] closures (onChunk, onToolCall, completion)
+  ├─ Stream callbacks mutate currentStreamingContent (@Published)
+  └─ SwiftUI re-renders ChatLogView on state change
+    ├─ ChatMessageView parses markdown on every render (M-6)
+    └─ AttributedString(markdown:) called repeatedly
 ```
 
-### Data Flow Problems
+### File Organization
 
-1. **No unidirectional data flow.** `ContentView` mutates its own `@State` variables (`currentStreamingContent`, `isStreaming`, `activeToolCalls`) from callbacks fired by `RouterManager`. The store is mutated from multiple places (sendMessage, completion handler, tool execution). There's no single source of truth — `currentStreamingContent` is ephemeral state that duplicates what should be in the store.
+| Layer | Files | Lines | Purpose |
+|-------|-------|-------|---------|
+| Presentation | App.swift | 27 | Window setup, menu commands |
+| | ContentView.swift | 73 | View composition (extracted subviews) |
+| | SidebarView.swift | 99 | Model selection, system prompt |
+| | ChatLogView.swift | 88 | Message list with scroll |
+| | ChatMessageView.swift | 197 | Markdown rendering, role badges |
+| | ComposerView.swift | 48 | Text input, send button |
+| | EmptyStateView.swift | 67 | No-messages prompt |
+| | ToolModalView.swift | 33 | Tool execution prompt |
+| Business Logic | ChatViewModel.swift | 207 | Orchestration, state mutations |
+| | ToolExecutor.swift | 45 | Subprocess execution |
+| Networking | RouterManager.swift | 384 | SSE streaming, retries, error handling |
+| Data | ConversationStore.swift | 54 | JSON persistence, debounced save |
+| Infrastructure | KeychainHelper.swift | 41 | Secure credential storage |
+| | LRMTheme.swift | 127 | Design system (colors, gradients) |
+| | LRMComponents.swift | 255 | Reusable UI components (buttons, editors) |
+| | ModelNamer.swift | 36 | Model name formatting |
+| | Debouncer.swift | 22 | Debounce operator |
+| | ToolCallDisplay.swift | 36 | Tool call data model |
+| **TOTAL** | **20 files** | **~1,890 lines** | Full application |
 
-2. **Callbacks create tight coupling.** `RouterManager.send()` takes three escaping closures (`onChunk`, `onToolCall`, `completion`) that directly mutate `ContentView`'s state. This makes `RouterManager` impossible to test in isolation and creates a retain cycle risk (confirmed in REVIEW.md C-1).
-
-3. **No async/await pattern.** The entire networking layer uses completion-handler callbacks instead of Swift concurrency (`AsyncSequence`, `async/throw`). This is the older pattern and makes the code harder to reason about, especially with the recursive `tryNext()` fallback logic.
-
----
-
-## 4. State Management Analysis
-
-### State Ownership
-
-| State | Owner | Type | Problem |
-|-------|-------|------|---------|
-| `messages` | `ConversationStore` | `@Published` | Correct |
-| `modelUsed` | `RouterManager` | `@Published` | Only set after completion, not during streaming |
-| `userInput` | `ContentView` | `@State` | Correct |
-| `systemPrompt` | `ContentView` | `@State` | Persisted to UserDefaults on every keystroke (REVIEW.md M-12) |
-| `isStreaming` | `ContentView` | `@State` | Duplicated — could be derived from store/router state |
-| `selectedModel` | `ContentView` | `@State` | Correct |
-| `currentStreamingContent` | `ContentView` | `@State` | Ephemeral duplicate of streaming state |
-| `activeToolCalls` | `ContentView` | `@State` | Should be in a dedicated tool state |
-| `sidebarVisible` | `ContentView` | `@State` | Correct |
-| `showingToolModal` | `ContentView` | `@State` | Correct |
-
-### State Management Problems
-
-1. **No centralized state.** There's no `AppState` or `ViewModel` that owns the conversation + streaming + tool state. Everything is split across `ContentView`'s `@State`, `ConversationStore`, and `RouterManager`.
-
-2. **Streaming state is ephemeral.** `currentStreamingContent` lives only in `ContentView.@State`. If the view is recreated (e.g., by a parent re-render), this state is lost. The streaming text should be stored in `ConversationStore` as a "pending assistant message" that gets finalized on completion.
-
-3. **No cancellation state.** `isStreaming` is a boolean that doesn't actually cancel anything. The `Task` inside `RouterManager.streamRequest` has no handle stored, so it can't be cancelled (REVIEW.md M-1).
-
----
-
-## 5. Networking Layer Analysis
-
-### RouterManager Design
+### Key Observations
 
 **Strengths:**
-- True SSE streaming via `URLSession.bytes(for:)` — the correct modern approach
-- Byte-by-line parsing with proper `[DONE]` detection
-- Model fallback with configurable retry count
-- Thread-safe completion via `NSLock` + `completed` flag
-- Tool call streaming support (incremental argument assembly)
+1. ✅ Clean separation of concerns — ViewModels own state, Views bind read-only
+2. ✅ Consistent design system (LRM theme tokens reduce ad-hoc styling)
+3. ✅ Async-first networking (URLSession.bytes) — modern SSE streaming
+4. ✅ Secure credential storage (Keychain)
+5. ✅ Background-threaded persistence (ConversationStore.save with debounce)
+6. ✅ Graceful model fallback (RouterManager retries with next model)
 
 **Weaknesses:**
-- No `Task` handle stored — impossible to cancel in-flight requests
-- No `async/await` — uses completion-handler callbacks throughout
-- No request deduplication — rapid sends create concurrent streams
-- Non-200 HTTP responses discard the error body (REVIEW.md M-4)
-- 401/403 errors trigger full model fallback instead of short-circuiting
-- `try!` on JSON decode will crash on malformed config (REVIEW.md M-9)
-
-### API Key Handling
-
-The keychain-first approach is correct, but the UserDefaults fallback in `ContentView.onAppear` (lines ~82–89) is a security concern (REVIEW.md C-3). The key should be purged from UserDefaults after successful keychain migration.
-
----
-
-## 6. UI Layer Analysis
-
-### View Hierarchy
-
-```
-ContentView
-├── Sidebar (inline, 260pt)
-│   ├── MetalText + LRMSecureField + LRMTextEditor + Picker + MetalButtons
-├── ChatArea
-│   ├── EmptyState (inline)
-│   ├── ChatLog (ScrollView + LazyVStack)
-│   │   ├── ChatMessageView (per message)
-│   │   │   ├── Avatar (circle)
-│   │   │   ├── Bubble (markdown via AttributedString)
-│   │   │   └── StatusBadge
-│   │   ├── ToolCallIndicator (per active tool)
-│   │   └── ChatMessageView (streaming, id="streaming")
-│   └── Composer (inline)
-│       ├── TextEditor + placeholder
-│       └── MetalButton (Send/Stop)
-```
-
-### UI Strengths
-
-1. **LRM design system is cohesive.** Every visual element uses the theme tokens. The ChamferShape, gradients, and color palette create a distinctive identity.
-
-2. **LazyVStack for chat log.** Correct choice for a potentially long list of messages — only visible messages are rendered.
-
-3. **ScrollViewReader for auto-scroll.** Proper use of `proxy.scrollTo()` with animation for new messages and streaming content.
-
-4. **Custom components are reusable.** `MetalButton`, `LRMTextEditor`, `LRMSecureField`, `StatusBadge`, and `PulsingDots` are well-designed, parameterized components.
-
-### UI Weaknesses
-
-1. **ContentView is not decomposable.** The sidebar, chat log, composer, and empty state are all inline computed properties. They should be separate `View` structs.
-
-2. **No accessibility.** Zero `.accessibilityLabel`, `.accessibilityHint`, or `@ScaledMetric` usage anywhere (REVIEW.md m-1, m-2, m-3).
-
-3. **Keyboard shortcuts don't work.** `.onReceive` observers for `.clearChat` and `.toggleSidebar` notifications are never registered (REVIEW.md m-9).
-
-4. **TextEditor newline/submit conflict.** `.onSubmit` on `TextEditor` doesn't properly distinguish Enter vs Shift+Enter (REVIEW.md C-2).
-
-5. **Markdown parsing in view body.** `ChatMessageView.markdownContent` parses `AttributedString(markdown:)` inside a `@ViewBuilder`, re-executing on every render (REVIEW.md M-6).
+1. ❌ **Retain cycle in RouterManager** (C-1) — [weak self] not used in streaming closures
+2. ❌ **No Task cancellation** (M-1) — Stop button doesn't actually cancel network request
+3. ❌ **Duplicated markdown rendering** (M-11) — StreamingMarkdownView vs ChatMessageView
+4. ❌ **Markdown parsing on every render** (M-6) — AttributedString parsed in view body
+5. ❌ **Notification-based command dispatch** (m-9) — Fragile, not composable
+6. ❌ **Large ContentView** (m-10) — No longer applicable, now well-decomposed
+7. ❌ **No concurrent-send guard** (M-8) — Multiple rapid sends could conflict
+8. ❌ **Timer leak in PulsingDots** (M-2) — Timers never cancelled
+9. ❌ **Unbounded SSE buffer** (M-3) — Data accumulation without cap
+10. ❌ **HTTP error bodies discarded** (M-4) — No error details in logs
 
 ---
 
-## 7. Structural Improvement Proposals
+## 5 Structural Improvements
 
-### Improvement 1: Decompose ContentView into Focused Subviews
+### 1. Introduce a `StreamingNetworkActor` for Thread-Safe Streaming
 
-**Problem:** `ContentView.swift` is a 330-line God View that owns sidebar, chat log, composer, empty state, messaging logic, tool execution, keyboard shortcuts, and the `ToolCallIndicator` view. It's untestable, unreadable, and violates single-responsibility.
+**Problem:** RouterManager is a class with mutable state (`modelUsed`, `inFlight`, `currentTask`). Multiple threads access these without synchronization. `[weak self]` in closures doesn't prevent retain cycles because the *caller* of `send()` captures the closures themselves.
 
-**Solution:** Extract into focused subviews and a dedicated view model:
+**Solution:** Wrap RouterManager's streaming logic in an actor to guarantee serial execution:
 
+```swift
+@globalActor
+actor StreamingNetworkActor {
+    static let shared = StreamingNetworkActor()
+}
+
+final class RouterManager: ObservableObject {
+    private var streamActor: StreamingNetworkActor = .shared
+    
+    @StreamingNetworkActor
+    func send(messages: [[String: Any]], ..., completion: @escaping ...) {
+        // Only one send() executes at a time
+        // No concurrent access to currentTask, modelUsed, inFlight
+        self.inFlight = true
+        defer { self.inFlight = false }
+        
+        // Strong reference to Task for cancellation
+        self.currentTask = Task { ... }
+    }
+    
+    @StreamingNetworkActor
+    func cancel() {
+        currentTask?.cancel()
+    }
+}
 ```
-Sources/OpenRouterFusion/
-├── ContentView.swift              (thin coordinator, ~80 lines)
-├── SidebarView.swift              (API key, system prompt, model picker, clear)
-├── ChatLogView.swift              (scroll view, messages, streaming, tool indicators)
-├── ComposerView.swift             (text input, send/stop buttons)
-├── EmptyStateView.swift           (logo, quick-start guide)
-├── ToolCallIndicatorView.swift    (move ToolCallDisplay + ToolCallIndicator here)
-└── Utilities/
-    └── ModelNamer.swift           (move friendlyModelName here)
-```
 
-**Files changed:**
-- `ContentView.swift` — reduced from ~330 to ~80 lines, owns only subview composition and keyboard shortcut observers
-- `SidebarView.swift` — new, owns all sidebar UI and state bindings
-- `ChatLogView.swift` — new, owns scroll view, message list, streaming indicator, tool indicators
-- `ComposerView.swift` — new, owns text input + send/stop with `onSend` callback
-- `EmptyStateView.swift` — new, owns empty state presentation
-- `ToolCallIndicatorView.swift` — new, moved from bottom of ContentView
-- `Utilities/ModelNamer.swift` — new, moved from ContentView free function
+**Benefits:**
+- Eliminates M-1 (no Task cancellation) — currentTask is stored and cancelled on demand
+- Eliminates M-8 (no concurrent-send guard) — actor serializes all sends
+- Eliminates C-1 (retain cycle) — actor boundary prevents implicit closure captures
+- Provides explicit error handling: non-retryable 401/403 short-circuits retries immediately
 
-**Impact:** HIGH. This is the single most impactful structural change. It makes every view independently testable, readable, and modifiable. It also eliminates the need for `ToolCallDisplay` to live in ContentView.
+**Files Affected:** `RouterManager.swift`  
+**Effort:** Medium (refactor async/await patterns, ensure Main thread marshalling)
 
 ---
 
-### Improvement 2: Introduce a ChatViewModel to Coordinate State
+### 2. Extract Markdown Rendering into a Cached `MarkdownService`
 
-**Problem:** State is scattered across `ContentView.@State`, `ConversationStore.@Published`, and `RouterManager.@Published`. Callbacks from `RouterManager` directly mutate `ContentView` state, creating tight coupling and retain cycle risks. Streaming text (`currentStreamingContent`) is ephemeral view state that can be lost.
+**Problem:**
+- M-6: ChatMessageView parses markdown on every view body evaluation
+- M-11: StreamingMarkdownView duplicates the parsing logic
+- No caching — long messages parse repeatedly during scroll/animation
 
-**Solution:** Create an `ChatViewModel: ObservableObject` that owns all chat coordination:
+**Solution:** Create a singleton service that caches parsed AttributedStrings:
 
 ```swift
 @MainActor
-final class ChatViewModel: ObservableObject {
-    @Published var messages: [ChatMessage]        // from ConversationStore
-    @Published var isStreaming: Bool = false
-    @Published var streamingContent: String = ""   // persisted, not ephemeral
-    @Published var activeToolCalls: [ToolCallDisplay] = []
-    @Published var modelUsed: String = ""
-
-    private let store: ConversationStore
-    private let router: RouterManager
-
-    func sendMessage(_ text: String, systemPrompt: String) async { ... }
-    func cancelStreaming() async { ... }
-    func clearChat() { ... }
-    func executeTool(command: String) async { ... }
-}
-```
-
-Key changes:
-- `ChatViewModel` owns the `sendMessage` logic currently in `ContentView`
-- `RouterManager` uses `AsyncSequence`/async-await instead of callbacks — the view model iterates the stream
-- `streamingContent` is owned by the view model, not by the view's `@State`
-- `cancelStreaming()` cancels the underlying `Task` handle stored in `RouterManager`
-
-**Files changed:**
-- `ChatViewModel.swift` — new, ~150 lines, owns all chat coordination
-- `ContentView.swift` — becomes a thin view that reads from `ChatViewModel`
-- `RouterManager.swift` — replace callback-based `send()` with `async throws` streaming method returning `AsyncThrowingStream<StreamEvent, Error>`
-- `ConversationStore.swift` — unchanged, used by view model
-
-**Impact:** HIGH. This eliminates the callback-based coupling, makes the streaming state persistent, enables proper cancellation, and makes the chat logic independently testable.
-
----
-
-### Improvement 3: Extract ChatMessage into an Independent Model File
-
-**Problem:** `ChatMessage` (the core data model) is defined inside `ConversationStore.swift` (the persistence layer). Any file that needs to reference `ChatMessage` must import the store, creating a false dependency. The model can't be imported without also importing persistence logic.
-
-**Solution:** Move `ChatMessage` and its `Role` enum to a standalone file:
-
-```swift
-// Models/ChatMessage.swift
-struct ChatMessage: Identifiable, Codable {
-    var id = UUID()
-    var role: Role
-    var content: String
-    var modelUsed: String?
-    enum Role: String, Codable { case user, assistant }
-}
-```
-
-Update `ConversationStore.swift` to import and use the model from the new file. Add new model files as needed:
-
-```
-Sources/OpenRouterFusion/Models/
-├── ChatMessage.swift              (moved from ConversationStore.swift)
-├── ToolCallDisplay.swift          (moved from ContentView.swift)
-└── StreamEvent.swift              (new: .chunk(String), .toolCall(id:name:args), .done)
-```
-
-**Files changed:**
-- `Models/ChatMessage.swift` — new, moved from `ConversationStore.swift`
-- `Models/ToolCallDisplay.swift` — new, moved from `ContentView.swift`
-- `Models/StreamEvent.swift` — new, enum for streaming events
-- `ConversationStore.swift` — remove `ChatMessage` definition, import from Models
-- `ContentView.swift` — import `ToolCallDisplay` from Models
-- `ChatMessageView.swift` — import `ChatMessage` from Models
-
-**Impact:** MEDIUM. This is a foundational cleanup that makes the dependency graph correct. It enables the view model extraction (Improvement 2) and makes models independently testable.
-
----
-
-### Improvement 4: Replace Callback-Based Streaming with AsyncSequence
-
-**Problem:** `RouterManager.send()` takes three escaping closures (`onChunk`, `onToolCall`, `completion`) that create tight coupling with `ContentView`, prevent cancellation, and make the code harder to reason about. The recursive `tryNext()` fallback logic is especially difficult to follow with completion handlers.
-
-**Solution:** Replace with `AsyncThrowingStream`:
-
-```swift
-// RouterManager.swift
-enum StreamEvent {
-    case chunk(String)
-    case toolCall(id: String, name: String, arguments: String)
-    case done
-}
-
-func stream(
-    messages: [[String: Any]],
-    systemPrompt: String?,
-    tools: [[String: Any]]?
-) -> AsyncThrowingStream<StreamEvent, Error> {
-    AsyncThrowingStream { continuation in
-        let task = Task {
-            // ... existing streaming logic ...
-            // Call continuation.yield(.chunk(text)) instead of onChunk
-            // Call continuation.finish() instead of completion
+final class MarkdownService {
+    static let shared = MarkdownService()
+    
+    private var cache = [String: AttributedString]()
+    private let lock = NSLock()
+    
+    func parse(_ markdown: String) -> AttributedString {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        if let cached = cache[markdown] {
+            return cached
         }
-        continuation.onTermination = { _ in task.cancel() }
+        
+        let parsed = try! AttributedString(markdown: markdown, options: .init(allowsExtendedAttributes: true))
+        cache[markdown] = parsed
+        return parsed
     }
-}
-
-// ChatViewModel.swift
-func sendMessage(_ text: String) async {
-    let stream = router.stream(messages: ..., systemPrompt: ..., tools: ...)
-    for try await event in stream {
-        switch event {
-        case .chunk(let text): streamingContent += text
-        case .toolCall(let id, let name, let args): ...
-        case .done: ...
-        }
+    
+    func clearCache() {
+        lock.lock()
+        cache.removeAll()
+        lock.unlock()
     }
 }
 ```
 
-**Files changed:**
-- `RouterManager.swift` — replace `send()` with `stream()`, remove callback parameters, return `AsyncThrowingStream<StreamEvent, Error>`
-- `RouterManager.swift` — store `Task` handle for cancellation, add `cancel()` method
-- `ChatViewModel.swift` — iterate stream with `for try await` instead of callbacks
-- `ContentView.swift` — remove all callback-based coordination
-
-**Impact:** HIGH. This is the modern Swift concurrency pattern. It eliminates retain cycles, enables structured cancellation, makes the code linear and readable, and is the prerequisite for proper stop/cancel behavior.
-
----
-
-### Improvement 5: Consolidate Markdown Rendering into a Single Component
-
-**Problem:** `StreamingMarkdownView` (45 lines) is defined but never used in the view hierarchy. `ChatMessageView` has its own inline markdown parsing in the `markdownContent` computed property (lines ~115–128) that uses different `AttributedString.MarkdownParsingOptions`. Two implementations of the same concern with different behavior — one dead, one potentially slow (parsed on every `body` evaluation).
-
-**Solution:** Make `StreamingMarkdownView` the single markdown renderer, fix its options, and use it everywhere:
-
+**Usage in ChatMessageView:**
 ```swift
-// StreamingMarkdownView.swift — the ONE markdown renderer
-struct MarkdownView: View {
-    let content: String
-    var isStreaming: Bool = false
-
+@MainActor
+struct ChatMessageView: View {
     var body: some View {
-        if content.isEmpty && isStreaming {
-            streamingIndicator
-        } else {
-            Text(parsedMarkdown)
-                .textSelection(.enabled)
+        Text(MarkdownService.shared.parse(message.content))
+    }
+}
+```
+
+**Remove:** Delete `StreamingMarkdownView.swift` entirely; move any special handling into `MarkdownService`.
+
+**Benefits:**
+- Eliminates M-6 (markdown parsing per render) — now O(1) after first parse
+- Eliminates M-11 (duplicate implementations) — single source of truth
+- Improves scroll performance during streaming
+- Cache respects memory pressure (can be cleared on low memory)
+
+**Files Affected:** `ChatMessageView.swift`, delete `StreamingMarkdownView.swift`  
+**Effort:** Low (straightforward service pattern)
+
+---
+
+### 3. Create a Layered Error Handling Architecture
+
+**Problem:** M-4 (no HTTP error body handling), M-8 (retries on non-retryable errors)
+
+**Current flow:**
+```
+Non-200 HTTP → "HTTP 401" (no body) → Try next model (wrong!)
+→ Exhaust all models → "All models exhausted" (real error hidden)
+```
+
+**Solution:** Define error layers and classification:
+
+```swift
+// Infrastructure error (network/HTTP/parsing)
+enum NetworkError: LocalizedError {
+    case httpError(statusCode: Int, body: String)
+    case sseParseError(String)
+    case timeout
+    case connectionLost
+}
+
+// Domain error (business logic)
+enum APIError: LocalizedError {
+    case invalidAPIKey
+    case modelUnavailable(String)
+    case allModelsExhausted([String: NetworkError])
+    case userCancelled
+    
+    var isRetryable: Bool {
+        switch self {
+        case .invalidAPIKey, .userCancelled: return false
+        default: return true
         }
     }
+}
 
-    private var parsedMarkdown: AttributedString {
-        // Single parsing logic, consistent options
-        do {
-            var options = AttributedString.MarkdownParsingOptions()
-            options.allowsExtendedAttributes = true
-            var result = try AttributedString(markdown: content, options: options)
-            result.foregroundColor = Color.lrmText
-            return result
-        } catch {
-            var fallback = AttributedString(content)
-            fallback.foregroundColor = Color.lrmText
-            return fallback
+// In RouterManager
+private func handleHTTPError(_ code: Int, body: String) -> APIError {
+    switch code {
+    case 401, 403:
+        return .invalidAPIKey  // Non-retryable → stop immediately
+    case 429:
+        return .modelUnavailable("Rate limited") // Retryable → try next
+    case 500...599:
+        return .modelUnavailable("Server error \(code)") // Retryable
+    default:
+        return .allModelsExhausted(["unknown": .httpError(code, body)])
+    }
+}
+```
+
+**Logging benefit:** Structured errors enable detailed logging/telemetry:
+```swift
+let logger = Logger(subsystem: "OpenRouterFusion", category: "networking")
+logger.error("Network error: \(error.localizedDescription) [retryable=\(error.isRetryable)]")
+```
+
+**Benefits:**
+- Eliminates M-4 (missing error bodies) — all HTTP responses logged with body
+- Eliminates M-8 (wrong retry logic) — 401/403 stops immediately
+- Testable error handling (unit tests for each error case)
+- Structured logging for debugging
+
+**Files Affected:** `RouterManager.swift`  
+**Effort:** Low–Medium (error type definition + classification)
+
+---
+
+### 4. Separate Tool Execution into a Self-Contained `ToolsFeature` Module
+
+**Problem:** Tool execution logic is scattered:
+- `ToolExecutor.swift` — process execution (has m-7, m-8 bugs)
+- `ToolModalView.swift` — UI for manual tool entry
+- `ToolCallDisplay.swift` — data model
+- `ChatViewModel.swift` — `executeTool()`, `runManualTool()` methods
+- `ChatMessageView.swift` — tool call indicators
+
+**Current coupling:**
+```
+ChatViewModel ← calls ToolExecutor
+ChatViewModel ← owns activeToolCalls: [ToolCallDisplay]
+ChatMessageView ← renders ToolCallDisplay
+ChatViewModel ← presents ToolModalView
+```
+
+**Solution:** Extract to a cohesive module:
+
+```
+ToolsFeature/
+├── ToolsService.swift       (owns ToolExecutor, manages lifecycle)
+├── ToolsStore.swift         (@Published activeToolCalls, errors)
+├── ToolCallView.swift       (render from ToolCallDisplay)
+├── ToolModalView.swift      (moved)
+└── ToolCallDisplay.swift    (moved)
+
+// ChatViewModel now delegates:
+func executeTool(id: String, name: String, args: String) {
+    toolsService.execute(id: id, name: name, args: args) { result in
+        // result: ToolsService.Result
+    }
+}
+```
+
+**Fixes included:**
+- m-7: ToolExecutor uses SIGKILL escalation after grace period
+- m-8: Pipes read concurrently before waitUntilExit
+
+**Benefits:**
+- Tool feature is independently testable
+- ToolExecutor concerns (SIGKILL, pipe deadlock) isolated
+- ChatViewModel is lighter (fewer methods)
+- Easier to replace/mock ToolsService for testing
+- Clear lifecycle management (service owns ToolExecutor)
+
+**Files Affected:** Refactor `ToolExecutor.swift`, create `ToolsService.swift` and `ToolsStore.swift`  
+**Effort:** Medium (requires moving code + ensuring callback chains work)
+
+---
+
+### 5. Replace Notification-Based Command Dispatch with View Composition
+
+**Problem:** m-9 (NotificationCenter listeners are wired but keyboard shortcuts post notifications that aren't handled)
+
+**Current architecture:**
+```
+App.swift posts .clearChat / .toggleSidebar notifications
+    ↓
+ContentView.onReceive() listens (but this is fragile — easy to forget)
+    ↓
+Calls vm.clearChat() / vm.sidebarVisible.toggle()
+```
+
+**Issues:**
+- Keyboard shortcuts are global, not scoped to views
+- Easy to forget `.onReceive` in a view
+- Notification names are string-based (typo-prone)
+- No clear responsibility flow
+- Testing requires mocking NotificationCenter
+
+**Solution:** Use a command-based composition at the App level:
+
+```swift
+// Define all commands
+protocol AppCommand {
+    @MainActor
+    func execute(on viewModel: ChatViewModel)
+}
+
+struct ClearChatCommand: AppCommand {
+    @MainActor
+    func execute(on vm: ChatViewModel) { vm.clearChat() }
+}
+
+struct ToggleSidebarCommand: AppCommand {
+    @MainActor
+    func execute(on vm: ChatViewModel) { 
+        withAnimation { vm.sidebarVisible.toggle() }
+    }
+}
+
+// In App.swift — keyboard shortcut directly triggers command
+@main
+struct OpenRouterFusionApp: App {
+    @StateObject private var vm = ChatViewModel()
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView(viewModel: vm)
+        }
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Clear Chat") { ClearChatCommand().execute(on: vm) }
+                    .keyboardShortcut("k", modifiers: .command)
+                
+                Button("Toggle Sidebar") { ToggleSidebarCommand().execute(on: vm) }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
         }
     }
 }
 ```
 
-Use it in `ChatMessageView` (replacing the inline `markdownContent` computed property) and remove the duplicate parsing.
+**Benefits:**
+- No NotificationCenter — type-safe, composable
+- Commands are testable (inject mock ChatViewModel)
+- Keyboard shortcuts are directly wired (no async notification propagation)
+- Easy to add/remove commands (no listeners to wire)
+- Commands can be reused from multiple UI entry points
 
-**Files changed:**
-- `StreamingMarkdownView.swift` — rename to `MarkdownView`, add `isStreaming` parameter, use consistent options
-- `ChatMessageView.swift` — replace inline `markdownContent` with `MarkdownView(content: message.content, isStreaming: isStreaming)`
-- Remove the duplicate `AttributedString(markdown:)` parsing from `ChatMessageView`
-
-**Impact:** MEDIUM. Eliminates dead code, ensures consistent markdown rendering across the app, and fixes the performance issue of re-parsing markdown on every view body evaluation.
-
----
-
-## 8. Additional Feature Recommendations
-
-### Conversation History / Multi-Session Support
-**Priority:** HIGH
-Currently there's a single `conversation.json`. Add a `ConversationList` view that shows past sessions, allows creating new conversations, and switching between them. Store each session as `conversations/{uuid}.json` in Application Support.
-
-### Search
-**Priority:** MEDIUM
-Add a search bar that filters messages by content. With `ConversationStore` owning the messages, this is a simple `filter` operation. For large conversations, consider indexing with `NSPredicate` or a lightweight full-text index.
-
-### Export
-**Priority:** MEDIUM
-Add export to Markdown, PDF, and plain text. This is straightforward with the existing `ChatMessage` model — iterate messages and format. Use `NSSharingService` for native share sheet integration.
-
-### SwiftUI Performance Wins
-**Priority:** MEDIUM
-1. **Fix `onChange` with `ScrollViewReader`.** The current `onChange(of: store.messages.count)` and `onChange(of: currentStreamingContent)` both trigger `proxy.scrollTo()` with animation. During streaming, this fires for *every token*, causing layout thrashing. Throttle to at most once per 100ms.
-2. **Cache parsed markdown.** Store the `AttributedString` result in a cache keyed by content hash to avoid re-parsing unchanged messages during scroll.
-3. **Use `EquatableView` for chat bubbles.** Prevent unnecessary re-rendering of messages that haven't changed by conforming `ChatMessageView` to `Equatable`.
-4. **Fix PulsingDots timer.** Replace `Timer.publish(autoconnect())` with `withAnimation(.repeatForever())` in `.onAppear` to eliminate the timer leak (REVIEW.md M-2).
+**Files Affected:** `App.swift`, `ContentView.swift` (remove .onReceive), create `Commands.swift`  
+**Effort:** Low–Medium (straightforward refactor, improves testability)
 
 ---
 
-## 9. Proposed Final File Structure
+## Summary Table
 
-```
-Sources/OpenRouterFusion/
-├── App.swift                          (unchanged, ~42 lines)
-├── ContentView.swift                  (thin coordinator, ~80 lines)
-│
-├── ViewModels/
-│   └── ChatViewModel.swift            (NEW: coordinates chat state, ~150 lines)
-│
-├── Views/
-│   ├── SidebarView.swift              (NEW: sidebar UI, ~120 lines)
-│   ├── ChatLogView.swift              (NEW: message list, ~100 lines)
-│   ├── ComposerView.swift             (NEW: text input + send, ~80 lines)
-│   ├── EmptyStateView.swift           (NEW: welcome screen, ~60 lines)
-│   ├── ToolCallIndicatorView.swift    (NEW: moved from ContentView, ~40 lines)
-│   └── ToolModalView.swift            (unchanged, ~40 lines)
-│
-├── Models/
-│   ├── ChatMessage.swift              (MOVED from ConversationStore.swift)
-│   ├── ToolCallDisplay.swift          (MOVED from ContentView.swift)
-│   └── StreamEvent.swift              (NEW: .chunk, .toolCall, .done)
-│
-├── Services/
-│   ├── RouterManager.swift            (REFACTORED: async streaming, ~200 lines)
-│   ├── ConversationStore.swift        (CLEANED: persistence only, ~35 lines)
-│   ├── ToolExecutor.swift             (unchanged, ~30 lines)
-│   └── KeychainHelper.swift           (unchanged, ~40 lines)
-│
-├── UI/
-│   ├── LRMTheme.swift                 (unchanged, ~120 lines)
-│   ├── LRMComponents.swift            (unchanged, ~290 lines)
-│   ├── ChatMessageView.swift          (SIMPLIFIED: uses MarkdownView, ~120 lines)
-│   └── MarkdownView.swift             (RENAMED from StreamingMarkdownView, ~50 lines)
-│
-└── Utilities/
-    └── ModelNamer.swift               (MOVED from ContentView, ~30 lines)
-```
-
-**Total:** 18 files (up from 10), but each file is focused, under 200 lines, and independently testable.
+| Improvement | Addresses | Effort | Impact | Priority |
+|-------------|-----------|--------|--------|----------|
+| 1. StreamingNetworkActor | C-1, M-1, M-8 | Medium | High | Critical |
+| 2. MarkdownService | M-6, M-11 | Low | Medium | High |
+| 3. Layered Errors | M-4, M-8 | Low–Med | Medium | High |
+| 4. ToolsFeature Module | m-7, m-8, m-10 | Medium | Medium | Medium |
+| 5. Command Composition | m-9 | Low–Med | Low–Med | Low |
 
 ---
 
-## 10. Summary of Architectural Health
+## Implementation Order
 
-| Dimension | Rating | Notes |
-|-----------|--------|-------|
-| **File Organization** | ⚠️ Fair | All 10 files in a single flat directory. No grouping by role (Models/Services/Views). |
-| **Separation of Concerns** | ⚠️ Fair | Theme system is excellent. ContentView is a God View. Networking mixes retry + streaming + parsing. |
-| **Data Flow** | ⚠️ Fair | Callback-based, bidirectional, no unidirectional pattern. Ephemeral streaming state. |
-| **State Management** | ⚠️ Weak | Scattered across 3 owners. No centralized view model. No cancellation support. |
-| **Networking** | ✅ Good | True SSE streaming, byte-level parsing, model fallback. Needs async/await and cancellation. |
-| **UI Layer** | ✅ Good | Cohesive design system, reusable components, proper LazyVStack. Needs decomposition. |
-| **Testability** | ⚠️ Weak | No unit-testable view models. Free functions. Tight coupling via callbacks. |
-| **Accessibility** | ❌ Missing | Zero accessibility labels, no Dynamic Type, color-only indicators. |
-| **Security** | ⚠️ Fair | Keychain is correct. UserDefaults fallback is a concern. Tool execution is unsanitized. |
-| **Performance** | ⚠️ Fair | Timer leak, markdown re-parsing, main-thread saves, scroll thrashing during streaming. |
+1. **First:** Improvement #1 (StreamingNetworkActor) — fixes critical retain cycle and Task cancellation
+2. **Then:** Improvement #2 (MarkdownService) — low effort, immediate scroll performance win
+3. **Then:** Improvement #3 (Layered Errors) — improves debuggability, unblocks retry logic fix
+4. **Parallel:** Improvement #4 (ToolsFeature) — medium effort, good team parallelization
+5. **Last:** Improvement #5 (Command Composition) — refactoring, improves testability but not urgent
 
-**Overall:** The app has a solid foundation — the LRM design system is excellent, the SSE streaming is well-implemented, and the model fallback pattern is smart. The primary architectural debt is the God View (ContentView), callback-based coupling, and lack of a view model layer. The five improvements above, applied in order, would transform this from a prototype into a well-architected macOS app.
+---
+
+## Testing Recommendations
+
+After implementing each improvement:
+- **StreamingNetworkActor:** Unit test concurrent send() calls (should queue, not error)
+- **MarkdownService:** Cache hit/miss tests, verify AttributedString parsing
+- **Layered Errors:** Test retry logic for 401 vs 5xx, verify error messages in logs
+- **ToolsFeature:** Test ToolExecutor with SIGKILL escalation, pipe deadlock scenario
+- **Command Composition:** Test keyboard shortcuts → command execution path, mock viewModel
+
+---
+
+## Risk Assessment
+
+| Risk | Mitigation |
+|------|-----------|
+| Actor reentrant issues | Use @StreamingNetworkActor sparingly; keep send() non-async |
+| Markdown cache memory bloat | Implement LRU eviction or max size cap |
+| Command composition scope creep | Define command boundaries upfront (no side effects) |
+| ToolsFeature refactor breaks tool calls | Maintain identical callback signatures during move |
+
+---
+
+## Conclusion
+
+The current architecture is well-structured and follows MVVM patterns cleanly. The five improvements above address the critical issues identified in REVIEW.md while maintaining the existing code organization. **StreamingNetworkActor** is the highest-priority improvement as it fixes a critical retain cycle and allows proper task cancellation. **MarkdownService** provides immediate performance benefits. Together, these improvements bring the codebase to production-ready quality.
