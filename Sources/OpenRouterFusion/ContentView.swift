@@ -44,6 +44,9 @@ struct ContentView: View {
     @State private var sidebarVisible = true
     @State private var showingKeychainAlert = false
     @State private var keychainAlertMessage = ""
+    
+    // Debouncer for streaming content scroll updates
+    private let scrollDebouncer = Debouncer(delay: 0.05) // 50ms throttle
 
     var body: some View {
         HStack(spacing: 0) {
@@ -293,8 +296,11 @@ struct ContentView: View {
                 }
             }
             .onChange(of: currentStreamingContent) {
-                withAnimation(.easeOut(duration: 0.1)) {
-                    proxy.scrollTo("streaming", anchor: .bottom)
+                // Debounce scroll updates during streaming to avoid excessive layout passes
+                scrollDebouncer.debounce {
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        proxy.scrollTo("streaming", anchor: .bottom)
+                    }
                 }
             }
             .onChange(of: activeToolCalls.count) {
