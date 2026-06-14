@@ -116,6 +116,21 @@ struct SidebarView: View {
                     .buttonStyle(PlainButtonStyle())
                 }
             }
+            Text(modeDescription)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.lrmMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var modeDescription: String {
+        switch vm.chatMode {
+        case .fast:
+            return "One random free model via OpenRouter's free router."
+        case .fusion:
+            return "Our own free-model council: parallel panel + local synthesis."
+        case .single:
+            return "Use one explicit model from the picker below."
         }
     }
 
@@ -139,6 +154,10 @@ struct SidebarView: View {
     
     private var actionButtons: some View {
         VStack(spacing: 8) {
+            MetalButton("Pi Sessions", variant: .metal) {
+                vm.showingSessionsList = true
+            }
+            
             MetalButton("Run Tool…", variant: .metal) {
                 vm.showingToolModal = true
             }

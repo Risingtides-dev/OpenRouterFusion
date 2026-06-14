@@ -1,21 +1,19 @@
 {
-  "concurrency": {
-    "workers": 3,
-    "max": 6
+  "crew": {
+    "models": {
+      "planner": "gpt-5.5",
+      "worker": "gpt-5.5",
+      "reviewer": "gpt-5.5",
+      "sync": "gpt-5.5"
+    },
+    "concurrency": 2,
+    "coordination": {
+      "projectScoped": true,
+      "reserveFiles": true
+    }
   },
-  "models": {
-    "worker": "openrouter/owl-alpha",
-    "planner": "openrouter/owl-alpha",
-    "reviewer": "openrouter/owl-alpha",
-    "analyst": "openrouter/owl-alpha"
-  },
-  "coordination": "moderate",
-  "planning": {
-    "maxPasses": 1
-  },
-  "work": {
-    "maxWaves": 50,
-    "maxAttemptsPerTask": 3,
-    "stopOnBlock": false
+  "project": {
+    "name": "OpenRouterFusion",
+    "rule": "Do not modify ~/.pi or global Pi settings. All generated state belongs under this repo's .pi/ directory."
   }
 }

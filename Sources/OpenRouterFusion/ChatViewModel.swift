@@ -24,6 +24,7 @@ final class ChatViewModel: ObservableObject {
     @Published var showingKeychainAlert: Bool = false
     @Published var keychainAlertMessage: String = ""
     @Published var showingToolModal: Bool = false
+    @Published var showingSessionsList: Bool = false
     @Published var toolCommand: String = ""
 
     // MARK: - Chat mode (fast / fusion / single)
@@ -102,8 +103,8 @@ final class ChatViewModel: ObservableObject {
 
         switch chatMode {
         case .fusion:
-            // Fusion mode: openrouter/fusion with panel + judge
-            NSLog("🔥 Fusion mode: sending to panel")
+            // Fusion mode: custom client-side free-model council + synthesis
+            NSLog("🔥 Fusion mode: sending to custom free-model council")
             router.sendFusion(
                 messages: messagesArray,
                 systemPrompt: sysPrompt,
@@ -120,7 +121,7 @@ final class ChatViewModel: ObservableObject {
                         case .success(let txt):
                             let finalText = txt.isEmpty ? self.currentStreamingContent : txt
                             if !finalText.isEmpty {
-                                self.store.append(role: .assistant, content: finalText, modelUsed: "fusion")
+                                self.store.append(role: .assistant, content: finalText, modelUsed: self.router.modelUsed.isEmpty ? "Custom Fusion" : self.router.modelUsed)
                             }
                         case .failure(let err):
                             self.store.append(role: .assistant, content: "❗️ Fusion Error: \(err.localizedDescription)")

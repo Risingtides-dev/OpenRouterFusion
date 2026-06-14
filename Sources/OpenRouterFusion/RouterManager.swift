@@ -11,10 +11,22 @@ final class RouterManager: ObservableObject {
 
     struct FusionConfig: Decodable {
         let enabled: Bool
+        let panelModels: [String]
+        let judgeModel: String?
+        let maxParallelRequests: Int?
+        let responseTimeoutSeconds: Int?
+    }
+
+    struct FusionPanelResult: Identifiable, Sendable {
+        let id = UUID()
         let model: String
-        let tool_choice: String?
-        let analysis_models: [String]
-        let judge_model: String?
+        let content: String?
+        let errorDescription: String?
+
+        var succeeded: Bool {
+            guard let content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+            return errorDescription == nil
+        }
     }
 
     enum ChatMode: String, CaseIterable {
@@ -253,7 +265,7 @@ final class RouterManager: ObservableObject {
         }
     }
 
-    // MARK: - Fusion mode: openrouter/fusion with panel + judge
+    // MARK: - Fusion mode: custom client-side free model council
 
     func sendFusion(
         messages: [[String: Any]],
@@ -261,8 +273,8 @@ final class RouterManager: ObservableObject {
         onChunk: @escaping (String) -> Void,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
-        guard let fusionConfig = config.fusion, fusionConfig.enabled else {
-            NSLog("⚠️ Fusion not configured, falling back to single model")
+        guard let fusionConfig = config.fusion, fusionConfig.enabled, !fusionConfig.panelModels.isEmpty else {
+            NSLog("⚠️ Custom fusion not configured, falling back to single model")
             send(messages: messages, systemPrompt: systemPrompt, tools: nil,
                  onChunk: onChunk, onToolCall: { _, _, _ in }, completion: completion)
             return
@@ -277,133 +289,295 @@ final class RouterManager: ObservableObject {
         inFlight = true
         taskLock.unlock()
 
-        Task { [weak self] in
+        let task = Task { [weak self] in
             guard let self = self else { return }
-
-            let apiKey = KeychainHelper.shared.get(key: self.apiKeyKey) ?? ""
-            guard !apiKey.isEmpty else {
+            defer {
+                self.taskLock.lock()
                 self.inFlight = false
-                completion(.failure(RouterError.apiKeyMissing))
-                return
+                self.currentTask = nil
+                self.taskLock.unlock()
             }
 
-            // Build the request body for openrouter/fusion
-            var body: [String: Any] = [
-                "model": fusionConfig.model,
-                "messages": messages,
-                "stream": true,
-                "tool_choice": fusionConfig.tool_choice ?? "required"
-            ]
-            if let sys = systemPrompt, !sys.isEmpty {
-                body["system"] = sys
-            }
-
-            // Fusion plugin config
-            var pluginConfig: [String: Any] = [
-                "id": "fusion",
-                "analysis_models": fusionConfig.analysis_models
-            ]
-            if let judge = fusionConfig.judge_model {
-                pluginConfig["model"] = judge
-            }
-            body["plugins"] = [pluginConfig]
-
-            guard let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions") else {
-                self.inFlight = false
-                completion(.failure(RouterError.invalidResponse))
-                return
-            }
-            var request = URLRequest(url: endpoint)
-            request.httpMethod = "POST"
-            request.timeoutInterval = TimeInterval(self.config.timeoutSeconds)
-            request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
             do {
-                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                var seenModels = Set<String>()
+                let panelModels = fusionConfig.panelModels.filter { seenModels.insert($0).inserted }
+                await MainActor.run {
+                    onChunk("⚗️ **Custom Fusion Council** — querying \(panelModels.count) free models in parallel…\n\n")
+                }
+
+                let results = await self.runFusionPanel(
+                    models: panelModels,
+                    messages: messages,
+                    systemPrompt: systemPrompt,
+                    timeoutSeconds: fusionConfig.responseTimeoutSeconds ?? self.config.timeoutSeconds
+                )
+
+                if Task.isCancelled {
+                    completion(.failure(RouterError.cancelled))
+                    return
+                }
+
+                let successes = results.filter(\.succeeded)
+                let failures = results.filter { !$0.succeeded }
+                await MainActor.run {
+                    for result in results {
+                        if result.succeeded {
+                            onChunk("✅ `\(ModelNamer.friendlyName(result.model))` responded\n")
+                        } else {
+                            let error = result.errorDescription ?? "empty response"
+                            onChunk("⚠️ `\(ModelNamer.friendlyName(result.model))` skipped: \(error)\n")
+                        }
+                    }
+                    onChunk("\n---\n\n")
+                }
+
+                guard !successes.isEmpty else {
+                    let details = failures.map { "- `\($0.model)`: \($0.errorDescription ?? "empty response")" }.joined(separator: "\n")
+                    completion(.failure(RouterError.httpError(statusCode: 502, body: "No fusion panel models returned usable content.\n\(details)")))
+                    return
+                }
+
+                let fused = await self.synthesizeFusionResult(
+                    successes: successes,
+                    failures: failures,
+                    originalMessages: messages,
+                    systemPrompt: systemPrompt,
+                    judgeModel: fusionConfig.judgeModel
+                )
+
+                if Task.isCancelled {
+                    completion(.failure(RouterError.cancelled))
+                    return
+                }
+
+                self.modelUsed = "Custom Fusion (\(successes.count)/\(panelModels.count))"
+                await MainActor.run { onChunk(fused) }
+                completion(.success(fused))
+            } catch is CancellationError {
+                completion(.failure(RouterError.cancelled))
             } catch {
-                self.inFlight = false
-                completion(.failure(RouterError.serializationFailed(error)))
-                return
+                completion(.failure(error))
             }
+        }
 
-            NSLog("🔥 Fusion: firing panel of \(fusionConfig.analysis_models.count) models")
+        taskLock.lock()
+        currentTask = task
+        taskLock.unlock()
+    }
 
-            let session = URLSession(configuration: .default)
-            var accumulated = ""
-            var completed = false
-            let lock = NSLock()
-
-            func safeComplete(_ result: Result<String, Error>) {
-                lock.lock()
-                defer { lock.unlock() }
-                guard !completed else { return }
-                completed = true
-                Task { @MainActor in completion(result) }
-            }
-
-            let task = Task {
-                do {
-                    let (bytes, response) = try await session.bytes(for: request)
-                    guard let httpResp = response as? HTTPURLResponse else {
-                        throw RouterError.invalidResponse
+    private func runFusionPanel(
+        models: [String],
+        messages: [[String: Any]],
+        systemPrompt: String?,
+        timeoutSeconds: Int
+    ) async -> [FusionPanelResult] {
+        await withTaskGroup(of: FusionPanelResult.self) { group in
+            for model in models {
+                group.addTask { [weak self] in
+                    guard let self = self else {
+                        return FusionPanelResult(model: model, content: nil, errorDescription: "router released")
                     }
-                    guard 200..<300 ~= httpResp.statusCode else {
-                        var errorBody = ""
-                        for try await line in bytes.lines { errorBody += line }
-                        if httpResp.statusCode == 401 || httpResp.statusCode == 403 {
-                            throw RouterError.unauthorized
-                        }
-                        throw RouterError.httpError(statusCode: httpResp.statusCode, body: errorBody)
+                    do {
+                        let content = try await self.completionRequest(
+                            model: model,
+                            messages: messages,
+                            systemPrompt: systemPrompt,
+                            timeoutSeconds: timeoutSeconds
+                        )
+                        return FusionPanelResult(model: model, content: content, errorDescription: nil)
+                    } catch is CancellationError {
+                        return FusionPanelResult(model: model, content: nil, errorDescription: RouterError.cancelled.localizedDescription)
+                    } catch {
+                        return FusionPanelResult(model: model, content: nil, errorDescription: error.localizedDescription)
                     }
-
-                    var dataBuffer = Data()
-                    let maxBufferSize = 65536
-
-                    for try await byte in bytes {
-                        if Task.isCancelled {
-                            safeComplete(.failure(RouterError.cancelled))
-                            return
-                        }
-                        dataBuffer.append(byte)
-                        if dataBuffer.count > maxBufferSize {
-                            NSLog("⚠️ Fusion SSE buffer overflow, discarding")
-                            dataBuffer = Data()
-                            continue
-                        }
-                        while let newlineIdx = dataBuffer.firstIndex(of: 0x0A) {
-                            let lineData = dataBuffer.subdata(in: dataBuffer.startIndex..<newlineIdx)
-                            let remainingStart = dataBuffer.index(after: newlineIdx)
-                            dataBuffer = remainingStart < dataBuffer.endIndex
-                                ? dataBuffer.subdata(in: remainingStart..<dataBuffer.endIndex)
-                                : Data()
-                            guard let line = String(data: lineData, encoding: .utf8)?.trimmingCharacters(in: .whitespaces),
-                                  line.hasPrefix("data: ") else { continue }
-                            let jsonStr = String(line.dropFirst(6))
-                            if jsonStr == "[DONE]" {
-                                safeComplete(.success(accumulated))
-                                return
-                            }
-                            guard let jsonData = jsonStr.data(using: .utf8),
-                                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                                  let choices = json["choices"] as? [[String: Any]],
-                                  let delta = choices.first?["delta"] as? [String: Any],
-                                  let content = delta["content"] as? String, !content.isEmpty else { continue }
-                            accumulated += content
-                            await MainActor.run { onChunk(content) }
-                        }
-                    }
-                    safeComplete(.success(accumulated))
-                } catch is CancellationError {
-                    safeComplete(.failure(RouterError.cancelled))
-                } catch {
-                    safeComplete(.failure(error))
                 }
             }
 
-            self.taskLock.lock()
-            self.currentTask = task
-            self.taskLock.unlock()
+            var byModel: [String: FusionPanelResult] = [:]
+            for await result in group {
+                byModel[result.model] = result
+            }
+            return models.compactMap { byModel[$0] }
         }
+    }
+
+    private func synthesizeFusionResult(
+        successes: [FusionPanelResult],
+        failures: [FusionPanelResult],
+        originalMessages: [[String: Any]],
+        systemPrompt: String?,
+        judgeModel: String?
+    ) async -> String {
+        let judgeCandidates = [judgeModel, "openrouter/owl-alpha", "openrouter/free"]
+            .compactMap { $0 }
+            .reduce(into: [String]()) { acc, model in
+                if !acc.contains(model) { acc.append(model) }
+            }
+
+        let prompt = buildFusionJudgePrompt(successes: successes, failures: failures, originalMessages: originalMessages)
+        let judgeMessages: [[String: Any]] = [[
+            "role": "user",
+            "content": prompt
+        ]]
+
+        for judge in judgeCandidates {
+            if Task.isCancelled { return localFusionSummary(successes: successes, failures: failures, judgeError: RouterError.cancelled.localizedDescription) }
+            do {
+                let synthesized = try await completionRequest(
+                    model: judge,
+                    messages: judgeMessages,
+                    systemPrompt: systemPrompt ?? "You are a careful synthesis judge. Fuse multiple model answers into one concise, useful answer.",
+                    timeoutSeconds: config.timeoutSeconds
+                )
+                let trimmed = synthesized.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    return "## Fusion Synthesis\n\n\(trimmed)\n\n---\n\n`Judge: \(ModelNamer.friendlyName(judge)) · Panel: \(successes.count) succeeded, \(failures.count) failed`"
+                }
+            } catch {
+                NSLog("⚠️ Fusion judge \(judge) failed: \(error.localizedDescription)")
+                continue
+            }
+        }
+
+        return localFusionSummary(successes: successes, failures: failures, judgeError: "judge models unavailable")
+    }
+
+    private func buildFusionJudgePrompt(
+        successes: [FusionPanelResult],
+        failures: [FusionPanelResult],
+        originalMessages: [[String: Any]]
+    ) -> String {
+        let userTurns = originalMessages.compactMap { msg -> String? in
+            guard let role = msg["role"] as? String,
+                  let content = msg["content"] as? String else { return nil }
+            return "\(role.uppercased()): \(content)"
+        }.joined(separator: "\n\n")
+
+        let panelText = successes.map { result in
+            """
+            ## \(result.model)
+            \(result.content ?? "")
+            """
+        }.joined(separator: "\n\n---\n\n")
+
+        let failureText = failures.isEmpty ? "None" : failures.map {
+            "- \($0.model): \($0.errorDescription ?? "empty response")"
+        }.joined(separator: "\n")
+
+        return """
+        We are running a custom free-model fusion council. The same user request was sent to multiple free OpenRouter models.
+
+        Your task: synthesize the successful panel outputs into ONE best answer. Do not mention implementation details unless useful. Preserve correct details, discard weak/duplicative claims, and explicitly flag contradictions only if they matter.
+
+        Return markdown with:
+        1. A direct answer first.
+        2. A short "Consensus" section if there is real agreement.
+        3. A short "Differences / caveats" section only if needed.
+
+        # Conversation
+        \(userTurns)
+
+        # Successful panel outputs
+        \(panelText)
+
+        # Failed/skipped panel models
+        \(failureText)
+        """
+    }
+
+    private func localFusionSummary(
+        successes: [FusionPanelResult],
+        failures: [FusionPanelResult],
+        judgeError: String
+    ) -> String {
+        let rawAnswers = successes.map { result in
+            """
+            ### \(ModelNamer.friendlyName(result.model))
+
+            \(result.content ?? "")
+            """
+        }.joined(separator: "\n\n---\n\n")
+
+        let failureBlock = failures.isEmpty ? "" : """
+
+        ## Skipped models
+        \(failures.map { "- `\($0.model)`: \($0.errorDescription ?? "empty response")" }.joined(separator: "\n"))
+        """
+
+        return """
+        ## Fusion Council Results
+
+        The judge synthesis step was unavailable (`\(judgeError)`), so here are the successful free-model council responses for manual comparison.
+
+        ## Successful responses
+
+        \(rawAnswers)
+        \(failureBlock)
+
+        ---
+
+        `Custom Fusion · \(successes.count) succeeded, \(failures.count) failed`
+        """
+    }
+
+    private func completionRequest(
+        model: String,
+        messages: [[String: Any]],
+        systemPrompt: String?,
+        timeoutSeconds: Int
+    ) async throws -> String {
+        guard let apiKey = KeychainHelper.shared.get(key: apiKeyKey), !apiKey.isEmpty else {
+            throw RouterError.apiKeyMissing
+        }
+        if Task.isCancelled { throw RouterError.cancelled }
+
+        var requestMessages = messages
+        if let sys = systemPrompt, !sys.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            requestMessages.insert(["role": "system", "content": sys], at: 0)
+        }
+
+        let body: [String: Any] = [
+            "model": model,
+            "messages": requestMessages,
+            "stream": false
+        ]
+
+        guard let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions") else {
+            throw RouterError.invalidResponse
+        }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = TimeInterval(timeoutSeconds)
+        request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResp = response as? HTTPURLResponse else {
+            throw RouterError.invalidResponse
+        }
+        guard 200..<300 ~= httpResp.statusCode else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            if httpResp.statusCode == 401 || httpResp.statusCode == 403 {
+                throw RouterError.unauthorized
+            }
+            throw RouterError.httpError(statusCode: httpResp.statusCode, body: body)
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let first = choices.first else {
+            throw RouterError.invalidResponse
+        }
+
+        if let message = first["message"] as? [String: Any],
+           let content = message["content"] as? String {
+            return content
+        }
+        if let text = first["text"] as? String {
+            return text
+        }
+        throw RouterError.invalidResponse
     }
 
     // MARK: - True SSE streaming via URLSession.bytes(for:)
