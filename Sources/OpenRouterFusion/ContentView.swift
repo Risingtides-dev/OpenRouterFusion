@@ -68,6 +68,14 @@ struct ContentView: View {
         .sheet(isPresented: $showingToolModal) {
             ToolModalView(command: $toolCommand, onRun: runManualTool)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .clearChat)) { _ in
+            clearChatShortcut()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                sidebarVisible.toggle()
+            }
+        }
         .onAppear {
             if let saved = UserDefaults.standard.string(forKey: "systemPrompt") {
                 systemPrompt = saved
@@ -76,12 +84,23 @@ struct ContentView: View {
             }
             selectedModel = router.config.default
 
-            if KeychainHelper.shared.get(key: "OpenRouterAPIKey") == nil,
-               let apiKey = UserDefaults.standard.string(forKey: "openrouter_api_key"), !apiKey.isEmpty {
-                let ok = KeychainHelper.shared.set(apiKey, for: "OpenRouterAPIKey")
-                if !ok {
-                    keychainAlertMessage = "Could not save API key to Keychain. It will only persist for this session."
-                    showingKeychainAlert = true
+            // One-time migration: move API key from UserDefaults → Keychain, then purge
+            if KeychainHelper.shared.get(key: "OpenRouterAPIKey") == nil {
+                if let legacyKey = UserDefaults.standard.string(forKey: "openrouter_api_key"), !legacyKey.isEmpty {
+                    let ok = KeychainHelper.shared.set(legacyKey, for: "OpenRouterAPIKey")
+                    if ok {
+                        // Migration succeeded — purge plaintext copy immediately
+                        UserDefaults.standard.removeObject(forKey: "openrouter_api_key")
+                    } else {
+                        keychainAlertMessage = "Could not migrate API key to Keychain. Please re-enter it in Settings."
+                        showingKeychainAlert = true
+                    }
+                }
+                // If neither keychain nor UserDefaults had a key, the user will be prompted by the sidebar
+            } else {
+                // Keychain has the key — ensure no stale plaintext copy lingers
+                if UserDefaults.standard.string(forKey: "openrouter_api_key") != nil {
+                    UserDefaults.standard.removeObject(forKey: "openrouter_api_key")
                 }
             }
         }
