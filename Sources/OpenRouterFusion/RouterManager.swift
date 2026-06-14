@@ -6,6 +6,37 @@ final class RouterManager: ObservableObject {
         let fallbackOrder: [String]
         let maxRetries: Int
         let timeoutSeconds: Int
+        let fusion: FusionConfig?
+    }
+
+    struct FusionConfig: Decodable {
+        let enabled: Bool
+        let model: String
+        let tool_choice: String?
+        let analysis_models: [String]
+        let judge_model: String?
+    }
+
+    enum ChatMode: String, CaseIterable {
+        case fast = "fast"
+        case fusion = "fusion"
+        case single = "single"
+
+        var displayName: String {
+            switch self {
+            case .fast: return "Fast"
+            case .fusion: return "Fusion"
+            case .single: return "Single"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .fast: return "bolt.fill"
+            case .fusion: return "sparkles"
+            case .single: return "cpu"
+            }
+        }
     }
 
     enum RouterError: LocalizedError {
@@ -80,7 +111,7 @@ final class RouterManager: ObservableObject {
             config = Config(default: "openrouter/owl-alpha", fallbackOrder: [
                 "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
                 "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free"
-            ], maxRetries: 4, timeoutSeconds: 30)
+            ], maxRetries: 4, timeoutSeconds: 30, fusion: nil)
             return
         }
         let data: Data
@@ -91,7 +122,7 @@ final class RouterManager: ObservableObject {
             config = Config(default: "openrouter/owl-alpha", fallbackOrder: [
                 "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
                 "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free"
-            ], maxRetries: 4, timeoutSeconds: 30)
+            ], maxRetries: 4, timeoutSeconds: 30, fusion: nil)
             return
         }
         do {
@@ -101,7 +132,7 @@ final class RouterManager: ObservableObject {
             config = Config(default: "openrouter/owl-alpha", fallbackOrder: [
                 "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
                 "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free"
-            ], maxRetries: 4, timeoutSeconds: 30)
+            ], maxRetries: 4, timeoutSeconds: 30, fusion: nil)
         }
     }
 
@@ -181,6 +212,197 @@ final class RouterManager: ObservableObject {
             // All candidates exhausted or maxRetries reached
             self?.inFlight = false
             completion(.failure(lastError ?? RouterError.allModelsExhausted))
+        }
+    }
+
+    // MARK: - Fast mode: openrouter/free (random free model)
+
+    func sendFast(
+        messages: [[String: Any]],
+        systemPrompt: String?,
+        onChunk: @escaping (String) -> Void,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        // Override candidates to only use openrouter/free
+        taskLock.lock()
+        guard !inFlight else {
+            taskLock.unlock()
+            completion(.failure(RouterError.allModelsExhausted))
+            return
+        }
+        inFlight = true
+        taskLock.unlock()
+
+        Task { [weak self] in
+            guard let self = self else { return }
+            self.streamRequest(
+                model: "openrouter/free",
+                messages: messages,
+                systemPrompt: systemPrompt,
+                tools: nil,
+                onChunk: onChunk,
+                onToolCall: { _, _, _ in },
+                completion: { [weak self] result in
+                    self?.inFlight = false
+                    if case .success = result {
+                        self?.modelUsed = "openrouter/free"
+                    }
+                    completion(result)
+                }
+            )
+        }
+    }
+
+    // MARK: - Fusion mode: openrouter/fusion with panel + judge
+
+    func sendFusion(
+        messages: [[String: Any]],
+        systemPrompt: String?,
+        onChunk: @escaping (String) -> Void,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        guard let fusionConfig = config.fusion, fusionConfig.enabled else {
+            NSLog("⚠️ Fusion not configured, falling back to single model")
+            send(messages: messages, systemPrompt: systemPrompt, tools: nil,
+                 onChunk: onChunk, onToolCall: { _, _, _ in }, completion: completion)
+            return
+        }
+
+        taskLock.lock()
+        guard !inFlight else {
+            taskLock.unlock()
+            completion(.failure(RouterError.allModelsExhausted))
+            return
+        }
+        inFlight = true
+        taskLock.unlock()
+
+        Task { [weak self] in
+            guard let self = self else { return }
+
+            let apiKey = KeychainHelper.shared.get(key: self.apiKeyKey) ?? ""
+            guard !apiKey.isEmpty else {
+                self.inFlight = false
+                completion(.failure(RouterError.apiKeyMissing))
+                return
+            }
+
+            // Build the request body for openrouter/fusion
+            var body: [String: Any] = [
+                "model": fusionConfig.model,
+                "messages": messages,
+                "stream": true,
+                "tool_choice": fusionConfig.tool_choice ?? "required"
+            ]
+            if let sys = systemPrompt, !sys.isEmpty {
+                body["system"] = sys
+            }
+
+            // Fusion plugin config
+            var pluginConfig: [String: Any] = [
+                "id": "fusion",
+                "analysis_models": fusionConfig.analysis_models
+            ]
+            if let judge = fusionConfig.judge_model {
+                pluginConfig["model"] = judge
+            }
+            body["plugins"] = [pluginConfig]
+
+            guard let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions") else {
+                self.inFlight = false
+                completion(.failure(RouterError.invalidResponse))
+                return
+            }
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.timeoutInterval = TimeInterval(self.config.timeoutSeconds)
+            request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            } catch {
+                self.inFlight = false
+                completion(.failure(RouterError.serializationFailed(error)))
+                return
+            }
+
+            NSLog("🔥 Fusion: firing panel of \(fusionConfig.analysis_models.count) models")
+
+            let session = URLSession(configuration: .default)
+            var accumulated = ""
+            var completed = false
+            let lock = NSLock()
+
+            func safeComplete(_ result: Result<String, Error>) {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !completed else { return }
+                completed = true
+                Task { @MainActor in completion(result) }
+            }
+
+            let task = Task {
+                do {
+                    let (bytes, response) = try await session.bytes(for: request)
+                    guard let httpResp = response as? HTTPURLResponse else {
+                        throw RouterError.invalidResponse
+                    }
+                    guard 200..<300 ~= httpResp.statusCode else {
+                        var errorBody = ""
+                        for try await line in bytes.lines { errorBody += line }
+                        if httpResp.statusCode == 401 || httpResp.statusCode == 403 {
+                            throw RouterError.unauthorized
+                        }
+                        throw RouterError.httpError(statusCode: httpResp.statusCode, body: errorBody)
+                    }
+
+                    var dataBuffer = Data()
+                    let maxBufferSize = 65536
+
+                    for try await byte in bytes {
+                        if Task.isCancelled {
+                            safeComplete(.failure(RouterError.cancelled))
+                            return
+                        }
+                        dataBuffer.append(byte)
+                        if dataBuffer.count > maxBufferSize {
+                            NSLog("⚠️ Fusion SSE buffer overflow, discarding")
+                            dataBuffer = Data()
+                            continue
+                        }
+                        while let newlineIdx = dataBuffer.firstIndex(of: 0x0A) {
+                            let lineData = dataBuffer.subdata(in: dataBuffer.startIndex..<newlineIdx)
+                            let remainingStart = dataBuffer.index(after: newlineIdx)
+                            dataBuffer = remainingStart < dataBuffer.endIndex
+                                ? dataBuffer.subdata(in: remainingStart..<dataBuffer.endIndex)
+                                : Data()
+                            guard let line = String(data: lineData, encoding: .utf8)?.trimmingCharacters(in: .whitespaces),
+                                  line.hasPrefix("data: ") else { continue }
+                            let jsonStr = String(line.dropFirst(6))
+                            if jsonStr == "[DONE]" {
+                                safeComplete(.success(accumulated))
+                                return
+                            }
+                            guard let jsonData = jsonStr.data(using: .utf8),
+                                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                                  let choices = json["choices"] as? [[String: Any]],
+                                  let delta = choices.first?["delta"] as? [String: Any],
+                                  let content = delta["content"] as? String, !content.isEmpty else { continue }
+                            accumulated += content
+                            await MainActor.run { onChunk(content) }
+                        }
+                    }
+                    safeComplete(.success(accumulated))
+                } catch is CancellationError {
+                    safeComplete(.failure(RouterError.cancelled))
+                } catch {
+                    safeComplete(.failure(error))
+                }
+            }
+
+            self.taskLock.lock()
+            self.currentTask = task
+            self.taskLock.unlock()
         }
     }
 
