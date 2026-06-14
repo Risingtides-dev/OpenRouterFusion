@@ -1,150 +1,170 @@
-# OpenRouterFusion — LRM SwiftUI Build Plan
+# OpenRouterFusion — Current Canonical Plan
 
-## Goal
-Build a native SwiftUI macOS chat app with Liquid Razor Metal UI. The gpt-oss-120b foundation is in place (RouterManager, ConversationStore, KeychainHelper, ToolExecutor, ToolModalView). Now we need to replace the basic SwiftUI UI with full LRM aesthetic and restore true streaming.
+_Last updated by NicePhoenix: 2026-06-14_
 
-## Current State
-- `Package.swift` — Swift 5.9, macOS 13, executable
-- `App.swift` — minimal SwiftUI App
-- `ContentView.swift` — basic sidebar+chat, WebView fallback, MetalButtonStyle
-- `RouterManager.swift` — uses dataTask (non-streaming), needs async streaming
-- `ConversationStore.swift` — JSON persistence, ChatMessage has role+content
-- `KeychainHelper.swift` — Keychain wrapper
-- `ToolExecutor.swift` — shell command runner
-- `ToolModalView.swift` — basic tool modal
-- `Resources/ModelConfig.json` — all free models
-- `Resources/openrtr-owl/index.html` — LRM HTML reference
+## Product Goal
 
-## LRM Design Tokens (from liquid-razor-metal-ui CSS)
+Build a native SwiftUI macOS app with Liquid Razor Metal UI that uses OpenRouter free models and a future embedded PiParty harness. This is **not** a WebView app and must not depend on or mingle with the user's real Pi/Thoth runtime.
 
-### Colors
-```
---lrm-bg:           #0b0d10  (red:0.043 green:0.051 blue:0.063)
---lrm-bg-2:         #0c1118  (red:0.047 green:0.067 blue:0.094)
---lrm-surface:      rgba(19,22,26,0.72)
---lrm-surface-strong: rgba(20,26,34,0.88)
---lrm-text:         #c0c6cc  (red:0.753 green:0.776 blue:0.800)
---lrm-text-strong:  #eef3f7  (red:0.933 green:0.953 blue:0.969)
---lrm-muted:        #687178  (red:0.408 green:0.443 blue:0.471)
---lrm-border:       rgba(192,198,204,0.12)
---lrm-border-strong:rgba(192,198,204,0.28)
---lrm-accent:       #8a84ff  (red:0.541 green:0.518 blue:1.0)
---lrm-metal:        #d8e0e8  (red:0.847 green:0.878 blue:0.910)
---lrm-metal-mid:    #8b949e  (red:0.545 green:0.580 blue:0.620)
---lrm-metal-dark:   #303845  (red:0.188 green:0.220 blue:0.271)
---lrm-danger:       #fb7185  (red:0.984 green:0.443 blue:0.510)
-```
+## Current Mode Model
 
-### Chamfer Shape (replaces CSS clip-path)
-```swift
-struct ChamferShape: Shape {
-    let cornerSize: CGFloat
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let c = min(cornerSize, min(rect.width, rect.height) / 2)
-        p.move(to: CGPoint(x: c, y: 0))
-        p.addLine(to: CGPoint(x: rect.maxX, y: 0))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - c))
-        p.addLine(to: CGPoint(x: rect.maxX - c, y: rect.maxY))
-        p.addLine(to: CGPoint(x: 0, y: rect.maxY))
-        p.addLine(to: CGPoint(x: 0, y: c))
-        p.closeSubpath()
-        return p
-    }
-}
-```
+The app has exactly three user-facing chat modes:
 
-## Files to CREATE
+1. **Fast**
+   - Uses `openrouter/free`.
+   - One random free model through OpenRouter's free router.
+   - Goal: quick/cheap answer.
 
-### 1. LRMTheme.swift
-- All Color extensions
-- ChamferShape
-- View modifiers: `.liquidSurface()`, `.metalSurface()`, `.lrmBorder()`
-- Gradient definitions
+2. **Fusion**
+   - Uses our own custom Fusion Router algorithm.
+   - Does **not** use OpenRouter's `openrouter/fusion` router/plugin.
+   - Current implemented flow:
+     1. Planner/decomposer parses the prompt into tasks/angles.
+     2. Task router assigns tasks across configured free panel models.
+     3. Successful partial results are collected; partial failures are tolerated.
+     4. Synthesis compiler merges successful outputs into one answer.
+   - Config keys:
+     - `fusion.panelModels`
+     - `fusion.plannerModel`
+     - `fusion.judgeModel`
+     - `fusion.maxTasks`
+     - `fusion.maxParallelRequests`
+     - `fusion.responseTimeoutSeconds`
 
-### 2. LRMComponents.swift
-- `MetalButton` — ButtonStyle with gradient, chamfer, hover sweep
-- `LiquidPanel` — View wrapper with liquid surface
-- `StatusBadge` — Small pill for model name / streaming
-- `LRMTextEditor` — Styled TextEditor
-- `LRMSecureField` — Styled SecureField
+3. **Solo**
+   - Uses one explicit selected model.
+   - If model picker is Auto, uses config default.
 
-### 3. ChatMessageView.swift
-- Single chat bubble with LRM styling
-- Avatar circle (user=blue gradient, assistant=accent gradient)
-- Bubble: liquid surface for user, metal panel for assistant
-- Model badge below assistant bubbles
-- Markdown rendering via AttributedString
+## Completed Recently
 
-### 4. StreamingMarkdownView.swift
-- Progressive markdown rendering
-- "Thinking…" pulsing animation when empty
+- `task-30` — Custom free fusion engine ✅
+- `task-31` — Project/app-local Pi Sessions list with isolated shell command generation ✅
+- `task-32` — Fusion Router v2 task decomposition + routed synthesis ✅
 
-## Files to MODIFY
+Latest relevant commits:
+- `1b82213 feat: Fusion Router v2 task decomposition flow`
+- `db1285e feat(task-31): Project-local Pi Sessions List — isolated from global Pi settings`
 
-### 5. ContentView.swift — Complete rewrite
-- Remove WebChatView, useEmbeddedWeb toggle
-- LRM sidebar with LiquidPanel
-- Native chat log with ChatMessageView
-- LRM-styled composer
-- Model picker from RouterManager.config
+## Hard Isolation Requirement
 
-### 6. RouterManager.swift — Restore streaming
-- Replace dataTask with URLSession.bytes(for:) async streaming
-- Parse SSE chunks in real-time
-- Track which model actually responded
-- Send streaming callbacks to ContentView
+The user does **not** trust any runtime that can mingle with their real Pi/Thoth setup.
 
-### 7. ConversationStore.swift — Add model tracking
-- Add `modelUsed: String?` to ChatMessage
-- Add `activeModel: String` tracking
+Therefore, future Pi/PiParty work must satisfy:
 
-### 8. App.swift — Polish
-- Add `.windowStyle(.hiddenTitleBar)` for native feel
-- Set default window size
+- No reads/writes to real `~/.pi`.
+- No Thoth memory tools or memory stores.
+- No real/global `pi_messenger` mesh.
+- No global agents/extensions/skills/prompts/config/sessions.
+- OpenRouterFusion/PiParty may have its **own** independent agents, extensions, messenger, memory, prompts, and sessions under its own app-owned root.
 
-### 9. Package.swift — Bump to macOS 14
-- Needed for better SwiftUI features
+Target app-owned root:
 
-## Files to KEEP (no changes)
-- KeychainHelper.swift
-- ToolExecutor.swift
-- ToolModalView.swift (minor LRM styling only)
-- Resources/ModelConfig.json
-
-## Build Script
-Create `build-app.sh` at project root (reference floating-terminal pattern)
-
-## View Hierarchy
-```
-OpenRouterFusionApp
-└── ContentView (LRM background)
-    ├── Sidebar (LiquidPanel, 280pt)
-    │   ├── "API KEY" label (MetalText)
-    │   ├── LRMSecureField
-    │   ├── "SYSTEM PROMPT" label
-    │   ├── LRMTextEditor
-    │   ├── "MODEL" label
-    │   ├── Model Picker
-    │   ├── MetalButton("Run Tool…", .metal)
-    │   ├── Spacer
-    │   └── MetalButton("Clear Chat", .ghost)
-    └── ChatArea
-        ├── ScrollView + LazyVStack
-        │   └── ChatMessageView per message
-        │       ├── Avatar (circle, gradient)
-        │       ├── VStack(bubble + modelBadge)
-        │       └── StreamingMarkdownView
-        └── Composer (LiquidPanel)
-            ├── LRMTextEditor (auto-grow)
-            └── HStack { Send/Stop buttons }
+```txt
+~/Library/Application Support/OpenRouterFusion/PiParty/
+├── home/
+├── agent/
+│   ├── settings.json
+│   ├── agents/
+│   ├── extensions/
+│   ├── prompts/
+│   ├── skills/
+│   ├── sessions/
+│   └── messenger/
+└── workspaces/
 ```
 
-## Acceptance Criteria
-1. `swift build` — zero errors
-2. App launches with LRM dark gunmetal background
-3. Sidebar: API key, system prompt, model picker, clear chat, run tool
-4. Chat: native streaming (tokens appear progressively)
-5. Model badge shows which model responded
-6. Markdown renders (bold, code, lists)
-7. `bash build-app.sh` produces working `.app`
+Current stopgap session commands use private `HOME`, private `--session-dir`, `PI_OFFLINE=1`, and disable extension/skills/context discovery. This is acceptable only as a bridge, not the final runtime architecture.
+
+## PiParty Runtime Direction
+
+Do **not** write a coding harness from scratch unless absolutely necessary.
+
+Preferred path:
+
+- Fork/vendor `xibbon/PiSwift` as `PiPartyKit`.
+- Patch it to use injected runtime paths instead of hardcoded `~/.pi` / `NSHomeDirectory()` defaults.
+- Bundle/use it as the app's internal Swift harness.
+- Maintain Pi-like tools, agents, subagents, extensions, and messenger — but all namespaced to PiParty only.
+
+PiSwift assessment:
+
+- Legit starting point: MIT, active, Swift-native, has agent/coding-agent/subagent pieces.
+- Not safe as direct dependency: young repo, no releases, local `../MiniTui` package dependency, hardcoded `~/.pi` paths.
+- Best used as a fork/vendor base.
+
+Relevant Crew task:
+- `task-34` — PiPartyKit fork/vendor PiSwift as independent runtime.
+
+## Swift LSP Direction
+
+Use Apple **SourceKit-LSP**.
+
+Verified locally:
+
+```txt
+sourcekit-lsp: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/sourcekit-lsp
+swift: Swift 6.2.3
+```
+
+Target service:
+
+```txt
+OpenRouterFusion/PiParty
+→ SwiftLSPService
+→ sourcekit-lsp subprocess per workspace
+→ JSON-RPC over stdio
+→ app-local scratch/build path
+```
+
+Use app-owned scratch path, e.g.:
+
+```bash
+sourcekit-lsp --scratch-path "~/Library/Application Support/OpenRouterFusion/PiParty/lsp-cache"
+```
+
+Minimum operations:
+- initialize
+- textDocument/didOpen
+- textDocument/didChange
+- textDocument/didClose
+- diagnostics
+- hover
+- definition
+- document symbols
+- completion
+
+Relevant Crew task:
+- `task-33` — Swift LSP integration.
+
+## Markdown Rendering Direction
+
+Use native SwiftUI markdown rendering.
+
+Recommended short-term:
+- Use upstream `LiYanan2004/MarkdownView`, pinned to a commit.
+- It is a SwiftUI renderer built on top of `swift-markdown`.
+- Better fit than the low-activity `aheze/MarkdownView` fork.
+
+Use `swiftlang/swift-markdown` directly only if MarkdownView styling limits block us and we need a custom LRM AST renderer.
+
+Relevant Crew task:
+- `task-35` — Native Markdown rendering via MarkdownView/swift-markdown.
+
+## Immediate Next Tasks
+
+1. `task-33`: SourceKit-LSP service layer.
+2. `task-34`: PiPartyKit fork/vendor plan + first integration spike.
+3. `task-35`: MarkdownView/swift-markdown renderer upgrade.
+4. After those: test Fusion Router v2 with real prompts/API key and refine task planning, result formatting, throttling, and progress UI.
+
+## Build Verification Baseline
+
+As of `task-32`:
+
+```bash
+cd /Users/risingtidesdev/dev/OpenRouterFusion
+swift build
+bash build-app.sh
+```
+
+Both pass. Release build still has a known Swift 6 warning about `NSLock` in async contexts, but project is compiling under Swift 5 language mode.
