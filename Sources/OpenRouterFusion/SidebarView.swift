@@ -17,13 +17,8 @@ struct SidebarView: View {
             // System Prompt
             systemPromptSection
             
-            // Chat Mode Toggle
-            chatModeSection
-            
-            // Model Picker (only in solo mode)
-            if vm.chatMode == .solo {
-                modelPickerSection
-            }
+            // Model Picker
+            modelPickerSection
             
             // Action buttons
             actionButtons
@@ -82,58 +77,6 @@ struct SidebarView: View {
         }
     }
     
-    // MARK: - Chat Mode Toggle
-
-    private var chatModeSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            MetalText("MODE")
-            HStack(spacing: 4) {
-                ForEach(RouterManager.ChatMode.allCases, id: \.self) { mode in
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            vm.chatMode = mode
-                        }
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: mode.icon)
-                                .font(.system(size: 10, weight: .bold))
-                            Text(mode.displayName)
-                                .font(.system(size: 10, weight: .bold))
-                        }
-                        .foregroundColor(vm.chatMode == mode ? .white : .lrmText)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(
-                            (vm.chatMode == mode ? Color.lrmAccent : Color.lrmSurface)
-                                .clipShape(ChamferShape(cornerSize: 4))
-                        )
-                        .overlay(
-                            ChamferShape(cornerSize: 4)
-                                .stroke(vm.chatMode == mode ? Color.lrmAccent.opacity(0.8) : Color.lrmBorder, lineWidth: 1)
-                        )
-                        .clipShape(ChamferShape(cornerSize: 4))
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-            }
-            Text(modeDescription)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.lrmMuted)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var modeDescription: String {
-        switch vm.chatMode {
-        case .fast:
-            return "One random free model via OpenRouter's free router."
-        case .fusion:
-            return "Router decomposes prompt into tasks, fans out to free models, then synthesizes."
-        case .solo:
-            return "Use one explicit model from the picker below."
-        }
-    }
-
     // MARK: - Model Picker
     
     private var modelPickerSection: some View {
@@ -154,10 +97,6 @@ struct SidebarView: View {
     
     private var actionButtons: some View {
         VStack(spacing: 8) {
-            MetalButton("Pi Sessions", variant: .metal) {
-                vm.showingSessionsList = true
-            }
-            
             MetalButton("Run Tool…", variant: .metal) {
                 vm.showingToolModal = true
             }

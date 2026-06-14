@@ -32,9 +32,6 @@ struct ContentView: View {
         .sheet(isPresented: $vm.showingToolModal) {
             ToolModalView(command: $vm.toolCommand, onRun: { cmd in vm.runManualTool(cmd) })
         }
-        .sheet(isPresented: $vm.showingSessionsList) {
-            SessionsListView()
-        }
         .onReceive(NotificationCenter.default.publisher(for: .clearChat)) { _ in
             vm.clearChat()
         }

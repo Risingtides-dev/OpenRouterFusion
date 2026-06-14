@@ -2,8 +2,6 @@ import SwiftUI
 
 @main
 struct OpenRouterFusionApp: App {
-    @Environment(\.openWindow) private var openWindow
-    
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -14,12 +12,6 @@ struct OpenRouterFusionApp: App {
         .commands {
             // Replace the default File menu with our clear command
             CommandGroup(after: .newItem) {
-                Divider()
-                Button("Pi Sessions") {
-                    openWindow(id: "pi-sessions")
-                }
-                .keyboardShortcut("l", modifiers: [.command, .shift])
-                
                 Divider()
                 Button("Clear Chat") {
                     NotificationCenter.default.post(name: .clearChat, object: nil)
@@ -32,12 +24,6 @@ struct OpenRouterFusionApp: App {
                 .keyboardShortcut("s", modifiers: [.command, .shift])
             }
         }
-        
-        Window("Pi Sessions", id: "pi-sessions") {
-            SessionsListView()
-        }
-        .defaultSize(width: 680, height: 500)
-        .keyboardShortcut("l", modifiers: [.command, .shift])
     }
 }
 
