@@ -5,9 +5,10 @@ import SwiftUI
 struct ChatMessageView: View {
     let message: ChatMessage
     var isStreaming: Bool = false
-    
+
     // Cache parsed markdown to avoid re-parsing on every render
     @State private var cachedAttributedContent: AttributedString?
+    @State private var lastParsedContent: String = ""
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -29,9 +30,17 @@ struct ChatMessageView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
         .onAppear {
-            // Pre-parse markdown once to avoid re-parsing on every render
-            if message.role == .assistant && cachedAttributedContent == nil {
+            // Pre-parse markdown once on first appearance
+            if message.role == .assistant {
                 cachedAttributedContent = parseMarkdown()
+                lastParsedContent = message.content
+            }
+        }
+        .onChange(of: message.content) { _, newContent in
+            // Invalidate cache when content changes (e.g., during streaming)
+            if message.role == .assistant && newContent != lastParsedContent {
+                cachedAttributedContent = parseMarkdown()
+                lastParsedContent = newContent
             }
         }
     }
@@ -46,6 +55,8 @@ struct ChatMessageView: View {
             .frame(width: 32, height: 32)
             .background(Circle().fill(avatarGradient))
             .overlay(Circle().stroke(Color.lrmBorderStrong, lineWidth: 0.5))
+            .accessibilityLabel(message.role == .user ? "User avatar" : "Assistant avatar")
+            .accessibilityHidden(true) // Decorative, not informative
     }
 
     private var initials: String {
@@ -121,8 +132,15 @@ struct ChatMessageView: View {
 
     @ViewBuilder
     private var markdownContent: some View {
-        let attributed = cachedAttributedContent ?? parseMarkdown()
-        
+        // Use cached AttributedString — guaranteed to be pre-parsed by onAppear/onChange
+        let attributed: AttributedString = {
+            if let cached = cachedAttributedContent {
+                return cached
+            }
+            // Fallback for first render before .onAppear (rare)
+            return parseMarkdown()
+        }()
+
         Text(attributed)
             .font(.system(size: 14))
             .textSelection(.enabled)
@@ -188,40 +206,4 @@ struct ChatMessageView: View {
     }
 }
 
-// MARK: - Preview
-
-#if DEBUG
-extension ChatMessage {
-    static func preview(role: Role, content: String, modelUsed: String? = nil) -> ChatMessage {
-        var msg = ChatMessage(role: role, content: content)
-        msg.modelUsed = modelUsed
-        return msg
-    }
-}
-
-struct ChatMessageView_Previews: PreviewProvider {
-    static var previews: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                ChatMessageView(
-                    message: .preview(role: .user, content: "Hello! How are you?")
-                )
-                ChatMessageView(
-                    message: .preview(
-                        role: .assistant,
-                        content: "I'm doing well! Here's **bold**, *italic*, and `code`.",
-                        modelUsed: "openrouter/auto"
-                    )
-                )
-                ChatMessageView(
-                    message: .preview(role: .assistant, content: "", modelUsed: "anthropic/claude"),
-                    isStreaming: true
-                )
-            }
-            .padding(.vertical, 20)
-        }
-        .background(Color.lrmBackground)
-        .frame(width: 600, height: 700)
-    }
-}
-#endif
+// Preview moved to Previews.swift

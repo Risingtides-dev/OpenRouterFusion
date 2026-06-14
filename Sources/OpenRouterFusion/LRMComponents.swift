@@ -26,7 +26,6 @@ struct MetalButton: View {
     let action: () -> Void
 
     @State private var isHovered = false
-    @State private var isPressed = false
 
     init(_ title: String, variant: MetalButtonVariant = .primary, size: MetalButtonSize = .md, action: @escaping () -> Void) {
         self.title = title; self.variant = variant; self.size = size; self.action = action
@@ -40,17 +39,12 @@ struct MetalButton: View {
                 .frame(height: size.height)
                 .padding(.horizontal, size.hPadding)
                 .background(backgroundView)
-                .scaleEffect(isPressed ? 0.97 : 1.0)
-                .brightness(isHovered && !isPressed ? 0.12 : 0.0)
+                .brightness(isHovered ? 0.12 : 0.0)
                 .animation(.easeInOut(duration: 0.12), value: isHovered)
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(MetalButtonStyle())
         .onHover { isHovered = $0 }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
-        )
+        .accessibilityLabel(title)
     }
 
     private var foregroundColor: Color {
@@ -82,6 +76,17 @@ struct MetalButton: View {
     }
 }
 
+// MARK: - MetalButtonStyle
+// Proper ButtonStyle that uses configuration.isPressed for press state
+
+struct MetalButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
 // MARK: - StatusBadge
 
 struct StatusBadge: View {
@@ -105,6 +110,7 @@ struct StatusBadge: View {
         .padding(.vertical, 3)
         .background(Color.lrmSurface.clipShape(ChamferShape(cornerSize: 4)))
         .overlay(ChamferShape(cornerSize: 4).stroke(Color.lrmBorder, lineWidth: 0.5))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -129,6 +135,41 @@ struct PulsingDots: View {
             }
         }
         .onAppear { animating = true }
+        .accessibilityLabel("Loading")
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+// MARK: - LRMFieldBackground
+// Shared background styling for text fields
+
+struct LRMFieldBackground: ViewModifier {
+    var isFocused: Bool = false
+    
+    func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    Color.lrmSurfaceStrong
+                    LinearGradient(
+                        colors: [.black.opacity(0.25), .clear, .white.opacity(0.03)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                }
+                .clipShape(ChamferShape(cornerSize: 8))
+            )
+            .overlay(
+                ChamferShape(cornerSize: 8)
+                    .stroke(isFocused ? Color.lrmAccent.opacity(0.5) : Color.lrmBorder,
+                            lineWidth: isFocused ? 1.5 : 1)
+            )
+            .clipShape(ChamferShape(cornerSize: 8))
+    }
+}
+
+extension View {
+    func lrmFieldBackground(isFocused: Bool = false) -> some View {
+        modifier(LRMFieldBackground(isFocused: isFocused))
     }
 }
 
@@ -160,23 +201,9 @@ struct LRMTextEditor: View {
                 .focused($isFocused)
         }
         .frame(maxHeight: maxHeight)
-        .background(
-            ZStack {
-                Color.lrmSurfaceStrong
-                LinearGradient(
-                    colors: [.black.opacity(0.25), .clear, .white.opacity(0.03)],
-                    startPoint: .top, endPoint: .bottom
-                )
-            }
-            .clipShape(ChamferShape(cornerSize: 8))
-        )
-        .overlay(
-            ChamferShape(cornerSize: 8)
-                .stroke(isFocused ? Color.lrmAccent.opacity(0.5) : Color.lrmBorder,
-                        lineWidth: isFocused ? 1.5 : 1)
-        )
-        .clipShape(ChamferShape(cornerSize: 8))
+        .lrmFieldBackground(isFocused: isFocused)
         .animation(.easeInOut(duration: 0.15), value: isFocused)
+        .accessibilityLabel(placeholder.isEmpty ? "Text editor" : placeholder)
     }
 }
 
@@ -201,15 +228,8 @@ struct LRMSecureField: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
         }
-        .background(
-            ZStack {
-                Color.lrmSurfaceStrong
-                LinearGradient(colors: [.black.opacity(0.25), .clear, .white.opacity(0.03)], startPoint: .top, endPoint: .bottom)
-            }
-            .clipShape(ChamferShape(cornerSize: 8))
-        )
-        .overlay(ChamferShape(cornerSize: 8).stroke(Color.lrmBorder, lineWidth: 1))
-        .clipShape(ChamferShape(cornerSize: 8))
+        .lrmFieldBackground()
+        .accessibilityLabel(placeholder.isEmpty ? "Secure text field" : placeholder)
     }
 }
 

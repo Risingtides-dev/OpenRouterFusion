@@ -35,6 +35,8 @@ struct ComposerView: View {
         .overlay(
             ChamferShape(cornerSize: 8).stroke(Color.lrmBorder, lineWidth: 1)
         )
+        .accessibilityLabel("Message input")
+        .accessibilityHint("Type your message. Press Enter to send, Shift+Enter for new line.")
     }
     
     // MARK: - Action Buttons
