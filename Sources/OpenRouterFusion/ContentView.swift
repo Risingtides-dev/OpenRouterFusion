@@ -339,6 +339,7 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 if isStreaming {
                     MetalButton("Stop", variant: .ghost) {
+                        router.cancel()
                         isStreaming = false
                         if !currentStreamingContent.isEmpty {
                             store.append(role: .assistant, content: currentStreamingContent)

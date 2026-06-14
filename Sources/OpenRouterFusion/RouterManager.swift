@@ -13,9 +13,23 @@ final class RouterManager: ObservableObject {
         case configDecodeFailed(Error)
         case serializationFailed(Error)
         case invalidResponse
-        case httpError(Int)
+        case httpError(statusCode: Int, body: String)
+        case unauthorized
+        case cancelled
         case apiKeyMissing
         case allModelsExhausted
+
+        /// Whether this error should trigger a retry with the next model
+        var isRetryable: Bool {
+            switch self {
+            case .httpError(let code, _):
+                return code != 401 && code != 403
+            case .unauthorized, .cancelled, .apiKeyMissing:
+                return false
+            default:
+                return true
+            }
+        }
 
         var errorDescription: String? {
             switch self {
@@ -27,8 +41,13 @@ final class RouterManager: ObservableObject {
                 return "Failed to serialize request body: \(err.localizedDescription)"
             case .invalidResponse:
                 return "Invalid response from server"
-            case .httpError(let code):
-                return "HTTP \(code)"
+            case .httpError(let code, let body):
+                let bodyPreview = body.count > 200 ? String(body.prefix(200)) + "…" : body
+                return "HTTP \(code) — \(bodyPreview)"
+            case .unauthorized:
+                return "Invalid API key — check your OpenRouter key in Settings"
+            case .cancelled:
+                return "Request cancelled by user"
             case .apiKeyMissing:
                 return "OpenRouter API key missing"
             case .allModelsExhausted:
@@ -40,6 +59,10 @@ final class RouterManager: ObservableObject {
     let config: Config
     @Published var modelUsed: String = ""
     private let apiKeyKey = "OpenRouterAPIKey"
+
+    /// Current streaming Task handle (for cancellation)
+    private var currentTask: Task<Void, Never>?
+    private let taskLock = NSLock()
 
     init() {
         // Search multiple locations for ModelConfig.json (bundle app vs swift package)
@@ -77,6 +100,15 @@ final class RouterManager: ObservableObject {
         }
     }
 
+    // MARK: - Cancel current streaming task
+
+    func cancel() {
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        currentTask?.cancel()
+        currentTask = nil
+    }
+
     // MARK: - Send with streaming + optional tool calling
 
     func send(
@@ -109,8 +141,13 @@ final class RouterManager: ObservableObject {
                     self?.modelUsed = model
                     completion(.success(txt))
                 case .failure(let err):
-                    print("⚠️ Model \(model) failed: \(err.localizedDescription); retrying…")
                     lastError = err
+                    // Short-circuit for non-retryable errors (auth, API key, cancellation)
+                    if let routerErr = err as? RouterError, !routerErr.isRetryable {
+                        completion(.failure(routerErr))
+                        return
+                    }
+                    print("⚠️ Model \(model) failed: \(err.localizedDescription); retrying…")
                     tryNext()
                 }
             }
@@ -188,7 +225,7 @@ final class RouterManager: ObservableObject {
             }
         }
 
-        Task {
+        let task = Task { [weak self] in
             do {
                 let (bytes, response) = try await session.bytes(for: request)
 
@@ -196,12 +233,26 @@ final class RouterManager: ObservableObject {
                     throw RouterError.invalidResponse
                 }
                 guard 200..<300 ~= httpResp.statusCode else {
-                    throw RouterError.httpError(httpResp.statusCode)
+                    // Read error body for diagnostic details (typically short JSON)
+                    var errorBody = ""
+                    for try await line in bytes.lines {
+                        errorBody += line
+                    }
+                    if httpResp.statusCode == 401 || httpResp.statusCode == 403 {
+                        throw RouterError.unauthorized
+                    }
+                    throw RouterError.httpError(statusCode: httpResp.statusCode, body: errorBody)
                 }
 
                 var dataBuffer = Data()
 
                 for try await byte in bytes {
+                    // Check if task has been cancelled
+                    if Task.isCancelled {
+                        safeComplete(.failure(RouterError.cancelled))
+                        return
+                    }
+
                     dataBuffer.append(byte)
 
                     // Process complete lines
@@ -218,7 +269,9 @@ final class RouterManager: ObservableObject {
 
                         let jsonStr = String(line.dropFirst(6))
                         if jsonStr == "[DONE]" {
+                            await fireToolCalls()
                             safeComplete(.success(accumulated))
+                            self?.currentTask = nil
                             return
                         }
 
@@ -230,7 +283,8 @@ final class RouterManager: ObservableObject {
                         // Text content — fire onChunk immediately for each token
                         if let content = delta["content"] as? String, !content.isEmpty {
                             accumulated += content
-                            await MainActor.run {
+                            await MainActor.run { [weak self] in
+                                guard self != nil else { return }
                                 onChunk(content)
                             }
                         }
@@ -262,6 +316,7 @@ final class RouterManager: ObservableObject {
                            finishReason == "stop" || finishReason == "length" {
                             await fireToolCalls()
                             safeComplete(.success(accumulated))
+                            self?.currentTask = nil
                             return
                         }
                     }
@@ -270,10 +325,20 @@ final class RouterManager: ObservableObject {
                 // Stream ended without [DONE]
                 await fireToolCalls()
                 safeComplete(.success(accumulated))
+                self?.currentTask = nil
 
+            } catch is CancellationError {
+                safeComplete(.failure(RouterError.cancelled))
+                self?.currentTask = nil
             } catch {
                 safeComplete(.failure(error))
+                self?.currentTask = nil
             }
         }
+
+        // Store the task so we can cancel it later
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        currentTask = task
     }
 }
