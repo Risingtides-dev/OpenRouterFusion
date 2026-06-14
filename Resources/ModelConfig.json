@@ -1,5 +1,5 @@
 {
-  "default": "openrouter/owl-alpha",
+  "default": "openrouter/google/gemini-1.5-flash",
   "fallbackOrder": [
     "openai/gpt-oss-120b:free",
     "google/gemma-4-31b-it:free",

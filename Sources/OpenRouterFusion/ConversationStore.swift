@@ -18,23 +18,30 @@ final class ConversationStore: ObservableObject {
         return folder.appendingPathComponent("conversation.json")
     }()
 
+    private let saveQueue = DispatchQueue(label: "openrouterfusion.save", qos: .utility)
+    private var saveWorkItem: DispatchWorkItem?
+
     init() { load() }
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
         guard let decoded = try? JSONDecoder().decode([ChatMessage].self, from: data) else {
-            // Corrupted file — back it up and start fresh
             let backup = fileURL.appendingPathExtension("bak")
             try? FileManager.default.moveItem(at: fileURL, to: backup)
-            print("⚠️ conversation.json was corrupted, backed up to \(backup.lastPathComponent)")
+            print("⚠️ conversation.json corrupted, backed up to \(backup.lastPathComponent)")
             return
         }
         messages = decoded
     }
 
     func save() {
-        guard let data = try? JSONEncoder().encode(messages) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        let messagesCopy = messages
+        saveWorkItem?.cancel()
+        saveWorkItem = DispatchWorkItem { [weak self] in
+            guard let data = try? JSONEncoder().encode(messagesCopy) else { return }
+            try? data.write(to: self?.fileURL ?? URL(fileURLWithPath: ""), options: .atomic)
+        }
+        saveQueue.asyncAfter(deadline: .now() + 0.3, execute: saveWorkItem!)
     }
 
     func append(role: ChatMessage.Role, content: String, modelUsed: String? = nil) {
@@ -44,6 +51,7 @@ final class ConversationStore: ObservableObject {
 
     func clear() {
         messages.removeAll()
-        save()
+        saveWorkItem?.cancel()
+        try? FileManager.default.removeItem(at: fileURL)
     }
 }

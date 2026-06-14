@@ -111,19 +111,24 @@ struct StatusBadge: View {
 // MARK: - PulsingDots
 
 struct PulsingDots: View {
-    @State private var phase: Int = 0
-    private let timer = Timer.publish(every: 0.45, on: .main, in: .common).autoconnect()
+    @State private var animating = false
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             ForEach(0..<3, id: \.self) { i in
                 Circle()
                     .fill(Color.lrmAccent)
-                    .frame(width: 3, height: 3)
-                    .opacity(phase == i ? 1.0 : 0.3)
+                    .frame(width: 4, height: 4)
+                    .opacity(animating ? 0.3 : 1.0)
+                    .animation(
+                        .easeInOut(duration: 0.6)
+                        .repeatForever(autoreverses: true)
+                        .delay(Double(i) * 0.2),
+                        value: animating
+                    )
             }
         }
-        .onReceive(timer) { _ in phase = (phase + 1) % 3 }
+        .onAppear { animating = true }
     }
 }
 

@@ -83,10 +83,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift"
         },
         {
@@ -122,7 +118,6 @@
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMComponents.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/LRMTheme.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swift.o",
-        "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolModalView.swift.o",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/resource_bundle_accessor.swift.o"
@@ -215,10 +210,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swift.o"
         },
         {
@@ -244,7 +235,6 @@
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMComponents.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMTheme.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift",
-        "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift",
         "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/DerivedSources/resource_bundle_accessor.swift"
@@ -272,7 +262,6 @@
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMComponents.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/LRMTheme.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/RouterManager.swift",
-      "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolModalView.swift",
       "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/DerivedSources/resource_bundle_accessor.swift",
@@ -390,10 +379,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift"
         },
         {
@@ -445,10 +430,6 @@
         {
           "kind" : "file",
           "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swift.o"
         },
         {
           "kind" : "file",

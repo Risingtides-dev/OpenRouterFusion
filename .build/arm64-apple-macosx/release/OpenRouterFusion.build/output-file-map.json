@@ -52,12 +52,6 @@
     "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.swiftdeps",
     "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/RouterManager.dia"
   },
-  "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/StreamingMarkdownView.swift": {
-    "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swift.o",
-    "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView~partial.swiftmodule",
-    "swift-dependencies": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.swiftdeps",
-    "diagnostics": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/StreamingMarkdownView.dia"
-  },
   "/Users/risingtidesdev/dev/OpenRouterFusion/Sources/OpenRouterFusion/ToolExecutor.swift": {
     "object": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor.swift.o",
     "swiftmodule": "/Users/risingtidesdev/dev/OpenRouterFusion/.build/arm64-apple-macosx/release/OpenRouterFusion.build/ToolExecutor~partial.swiftmodule",

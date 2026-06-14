@@ -8,6 +8,35 @@ final class RouterManager: ObservableObject {
         let timeoutSeconds: Int
     }
 
+    enum RouterError: LocalizedError {
+        case configNotFound(String)
+        case configDecodeFailed(Error)
+        case serializationFailed(Error)
+        case invalidResponse
+        case httpError(Int)
+        case apiKeyMissing
+        case allModelsExhausted
+
+        var errorDescription: String? {
+            switch self {
+            case .configNotFound(let paths):
+                return "ModelConfig.json not found. Searched: \(paths)"
+            case .configDecodeFailed(let err):
+                return "Failed to decode ModelConfig.json: \(err.localizedDescription)"
+            case .serializationFailed(let err):
+                return "Failed to serialize request body: \(err.localizedDescription)"
+            case .invalidResponse:
+                return "Invalid response from server"
+            case .httpError(let code):
+                return "HTTP \(code)"
+            case .apiKeyMissing:
+                return "OpenRouter API key missing"
+            case .allModelsExhausted:
+                return "All models exhausted"
+            }
+        }
+    }
+
     let config: Config
     @Published var modelUsed: String = ""
     private let apiKeyKey = "OpenRouterAPIKey"
@@ -20,11 +49,32 @@ final class RouterManager: ObservableObject {
             Bundle.main.resourceURL?.appendingPathComponent("ModelConfig.json"),
             Bundle.main.resourceURL?.appendingPathComponent("Resources/ModelConfig.json"),
         ]
-        guard let url = candidates.compactMap({ $0 }).first,
-              let data = try? Data(contentsOf: url) else {
-            fatalError("ModelConfig.json not found in bundle resources. Searched: \(candidates.compactMap { $0?.path })")
+        let searchedPaths = candidates.compactMap { $0?.path }
+        guard let url = candidates.compactMap({ $0 }).first else {
+            print("⚠️ ModelConfig.json not found at: \(searchedPaths). Using defaults.")
+            config = Config(default: "openrouter/owl-alpha", fallbackOrder: [
+                "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
+                "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free"
+            ], maxRetries: 4, timeoutSeconds: 30)
+            return
         }
-        config = try! JSONDecoder().decode(Config.self, from: data)
+        guard let data = try? Data(contentsOf: url) else {
+            print("⚠️ Could not read ModelConfig.json data. Using defaults.")
+            config = Config(default: "openrouter/owl-alpha", fallbackOrder: [
+                "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
+                "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free"
+            ], maxRetries: 4, timeoutSeconds: 30)
+            return
+        }
+        do {
+            config = try JSONDecoder().decode(Config.self, from: data)
+        } catch {
+            print("⚠️ ModelConfig.json decode failed: \(error). Using defaults.")
+            config = Config(default: "openrouter/owl-alpha", fallbackOrder: [
+                "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
+                "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free"
+            ], maxRetries: 4, timeoutSeconds: 30)
+        }
     }
 
     // MARK: - Send with streaming + optional tool calling
@@ -43,16 +93,17 @@ final class RouterManager: ObservableObject {
 
         func tryNext() {
             guard attempt < candidates.count && attempt < config.maxRetries else {
-                completion(.failure(lastError ?? NSError(
-                    domain: "Router", code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: "All models exhausted"]
-                )))
+                completion(.failure(lastError ?? RouterError.allModelsExhausted))
                 return
             }
             let model = candidates[attempt]
             attempt += 1
 
-            streamRequest(model: model, messages: messages, systemPrompt: systemPrompt, tools: tools, onChunk: onChunk, onToolCall: onToolCall) { [weak self] result in
+            streamRequest(
+                model: model, messages: messages,
+                systemPrompt: systemPrompt, tools: tools,
+                onChunk: onChunk, onToolCall: onToolCall
+            ) { [weak self] result in
                 switch result {
                 case .success(let txt):
                     self?.modelUsed = model
@@ -79,11 +130,8 @@ final class RouterManager: ObservableObject {
         onToolCall: @escaping (String, String, String) -> Void,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
-        guard let apiKey = KeychainHelper.shared.get(key: apiKeyKey) else {
-            completion(.failure(NSError(
-                domain: "Router", code: -2,
-                userInfo: [NSLocalizedDescriptionKey: "OpenRouter API key missing"]
-            )))
+        guard let apiKey = KeychainHelper.shared.get(key: apiKeyKey), !apiKey.isEmpty else {
+            completion(.failure(RouterError.apiKeyMissing))
             return
         }
 
@@ -95,28 +143,60 @@ final class RouterManager: ObservableObject {
         if let sys = systemPrompt { body["system"] = sys }
         if let tools = tools { body["tools"] = tools }
 
-        var request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/chat/completions")!)
+        guard let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions") else {
+            completion(.failure(RouterError.invalidResponse))
+            return
+        }
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = TimeInterval(config.timeoutSeconds)
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            completion(.failure(RouterError.serializationFailed(error)))
+            return
+        }
 
         let session = URLSession(configuration: .default)
         var accumulated = ""
         var toolCalls: [Int: [String: Any]] = [:]
         var completed = false
+        let lock = NSLock()
+
+        /// Thread-safe single-fire completion helper
+        func safeComplete(_ result: Result<String, Error>) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !completed else { return }
+            completed = true
+            Task { @MainActor in
+                completion(result)
+            }
+        }
+
+        /// Fire accumulated tool calls on MainActor
+        @MainActor
+        func fireToolCalls() {
+            for (_, tc) in toolCalls.sorted(by: { $0.key < $1.key }) {
+                if let id = tc["id"] as? String,
+                   let name = tc["name"] as? String,
+                   let args = tc["arguments"] as? String {
+                    onToolCall(id, name, args)
+                }
+            }
+        }
 
         Task {
             do {
                 let (bytes, response) = try await session.bytes(for: request)
 
                 guard let httpResp = response as? HTTPURLResponse else {
-                    throw NSError(domain: "Router", code: -3, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+                    throw RouterError.invalidResponse
                 }
                 guard 200..<300 ~= httpResp.statusCode else {
-                    throw NSError(domain: "Router", code: -httpResp.statusCode,
-                        userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResp.statusCode)"])
+                    throw RouterError.httpError(httpResp.statusCode)
                 }
 
                 var dataBuffer = Data()
@@ -132,20 +212,20 @@ final class RouterManager: ObservableObject {
                             ? dataBuffer.subdata(in: remainingStart..<dataBuffer.endIndex)
                             : Data()
 
-                        guard let line = String(data: lineData, encoding: .utf8)?.trimmingCharacters(in: .whitespaces) else { continue }
+                        guard let line = String(data: lineData, encoding: .utf8)?.trimmingCharacters(in: .whitespaces)
+                        else { continue }
                         if !line.hasPrefix("data: ") { continue }
 
                         let jsonStr = String(line.dropFirst(6))
                         if jsonStr == "[DONE]" {
-                            completed = true
-                            await finish()
+                            safeComplete(.success(accumulated))
                             return
                         }
 
-                        guard let jsonData = jsonStr.data(using: .utf8),
-                              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                              let choices = json["choices"] as? [[String: Any]],
-                              let delta = choices.first?["delta"] as? [String: Any] else { continue }
+                        guard let jsonData = jsonStr.data(using: .utf8) else { continue }
+                        guard let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { continue }
+                        guard let choices = json["choices"] as? [[String: Any]] else { continue }
+                        guard let delta = choices.first?["delta"] as? [String: Any] else { continue }
 
                         // Text content — fire onChunk immediately for each token
                         if let content = delta["content"] as? String, !content.isEmpty {
@@ -159,10 +239,16 @@ final class RouterManager: ObservableObject {
                         if let deltaTools = delta["tool_calls"] as? [[String: Any]] {
                             for deltaTool in deltaTools {
                                 let index = deltaTool["index"] as? Int ?? 0
-                                if toolCalls[index] == nil { toolCalls[index] = [:] }
-                                if let id = deltaTool["id"] { toolCalls[index]!["id"] = id }
+                                if toolCalls[index] == nil {
+                                    toolCalls[index] = [:]
+                                }
+                                if let id = deltaTool["id"] as? String {
+                                    toolCalls[index]!["id"] = id
+                                }
                                 if let function = deltaTool["function"] as? [String: Any] {
-                                    if let name = function["name"] { toolCalls[index]!["name"] = name }
+                                    if let name = function["name"] as? String {
+                                        toolCalls[index]!["name"] = name
+                                    }
                                     if let args = function["arguments"] as? String {
                                         let existing = toolCalls[index]!["arguments"] as? String ?? ""
                                         toolCalls[index]!["arguments"] = existing + args
@@ -174,43 +260,19 @@ final class RouterManager: ObservableObject {
                         // Check for finish_reason
                         if let finishReason = choices.first?["finish_reason"] as? String,
                            finishReason == "stop" || finishReason == "length" {
-                            completed = true
-                            finishToolCalls()
-                            await finish()
+                            await fireToolCalls()
+                            safeComplete(.success(accumulated))
                             return
                         }
                     }
                 }
 
-                // Stream ended
-                if !completed {
-                    completed = true
-                    finishToolCalls()
-                    await finish()
-                }
+                // Stream ended without [DONE]
+                await fireToolCalls()
+                safeComplete(.success(accumulated))
 
             } catch {
-                if !completed {
-                    completed = true
-                    await MainActor.run {
-                        completion(.failure(error))
-                    }
-                }
-            }
-
-            @MainActor
-            func finish() {
-                completion(accumulated.isEmpty ? .success("") : .success(accumulated))
-            }
-
-            func finishToolCalls() {
-                for (_, tc) in toolCalls.sorted(by: { $0.key < $1.key }) {
-                    if let id = tc["id"] as? String,
-                       let name = tc["name"] as? String,
-                       let args = tc["arguments"] as? String {
-                        Task { @MainActor in onToolCall(id, name, args) }
-                    }
-                }
+                safeComplete(.failure(error))
             }
         }
     }
