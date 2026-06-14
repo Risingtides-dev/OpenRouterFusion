@@ -63,6 +63,8 @@ final class RouterManager: ObservableObject {
     /// Current streaming Task handle (for cancellation)
     private var currentTask: Task<Void, Never>?
     private let taskLock = NSLock()
+    /// Guard against concurrent sends — only one stream at a time
+    @Published private(set) var inFlight = false
 
     init() {
         // Search multiple locations for ModelConfig.json (bundle app vs swift package)
@@ -107,6 +109,7 @@ final class RouterManager: ObservableObject {
         defer { taskLock.unlock() }
         currentTask?.cancel()
         currentTask = nil
+        inFlight = false
     }
 
     // MARK: - Send with streaming + optional tool calling
@@ -119,12 +122,23 @@ final class RouterManager: ObservableObject {
         onToolCall: @escaping (String, String, String) -> Void,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
+        // Guard against concurrent sends
+        taskLock.lock()
+        guard !inFlight else {
+            taskLock.unlock()
+            completion(.failure(RouterError.allModelsExhausted))
+            return
+        }
+        inFlight = true
+        taskLock.unlock()
+
         let candidates = [config.default] + config.fallbackOrder
         var attempt = 0
         var lastError: Error?
 
         func tryNext() {
             guard attempt < candidates.count && attempt < config.maxRetries else {
+                self.inFlight = false
                 completion(.failure(lastError ?? RouterError.allModelsExhausted))
                 return
             }
@@ -139,11 +153,13 @@ final class RouterManager: ObservableObject {
                 switch result {
                 case .success(let txt):
                     self?.modelUsed = model
+                    self?.inFlight = false
                     completion(.success(txt))
                 case .failure(let err):
                     lastError = err
                     // Short-circuit for non-retryable errors (auth, API key, cancellation)
                     if let routerErr = err as? RouterError, !routerErr.isRetryable {
+                        self?.inFlight = false
                         completion(.failure(routerErr))
                         return
                     }
@@ -245,6 +261,7 @@ final class RouterManager: ObservableObject {
                 }
 
                 var dataBuffer = Data()
+                let maxBufferSize = 65536 // 64KB max line length
 
                 for try await byte in bytes {
                     // Check if task has been cancelled
@@ -254,6 +271,13 @@ final class RouterManager: ObservableObject {
                     }
 
                     dataBuffer.append(byte)
+
+                    // Guard against unbounded buffer growth (malformed data without newlines)
+                    if dataBuffer.count > maxBufferSize {
+                        print("⚠️ SSE buffer exceeded limit (\(dataBuffer.count) bytes); discarding malformed stream")
+                        dataBuffer = Data()
+                        continue
+                    }
 
                     // Process complete lines
                     while let newlineIdx = dataBuffer.firstIndex(of: 0x0A) {
@@ -293,19 +317,23 @@ final class RouterManager: ObservableObject {
                         if let deltaTools = delta["tool_calls"] as? [[String: Any]] {
                             for deltaTool in deltaTools {
                                 let index = deltaTool["index"] as? Int ?? 0
+                                // Ensure the dictionary exists for this index
                                 if toolCalls[index] == nil {
                                     toolCalls[index] = [:]
                                 }
+                                // Safe force unwrap: we just ensured the key exists above
+                                guard toolCalls[index] != nil else { continue }
+                                
                                 if let id = deltaTool["id"] as? String {
-                                    toolCalls[index]!["id"] = id
+                                    toolCalls[index]?["id"] = id
                                 }
                                 if let function = deltaTool["function"] as? [String: Any] {
                                     if let name = function["name"] as? String {
-                                        toolCalls[index]!["name"] = name
+                                        toolCalls[index]?["name"] = name
                                     }
                                     if let args = function["arguments"] as? String {
-                                        let existing = toolCalls[index]!["arguments"] as? String ?? ""
-                                        toolCalls[index]!["arguments"] = existing + args
+                                        let existing = (toolCalls[index]?["arguments"] as? String) ?? ""
+                                        toolCalls[index]?["arguments"] = existing + args
                                     }
                                 }
                             }
