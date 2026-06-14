@@ -18,6 +18,9 @@ final class ChatViewModel: ObservableObject {
     @Published var systemPrompt: String = ""
     @Published var isStreaming: Bool = false
     @Published var selectedModel: String = ""
+    @Published var chatMode: RouterManager.ChatMode = .fusion {
+        didSet { UserDefaults.standard.set(chatMode.rawValue, forKey: "chatMode") }
+    }
     @Published var currentStreamingContent: String = ""
     @Published var activeToolCalls: [ToolCallDisplay] = []
     @Published var sidebarVisible: Bool = true
@@ -47,6 +50,12 @@ final class ChatViewModel: ObservableObject {
             systemPrompt = "You are a helpful AI assistant running on a macOS machine. Your home directory is \(NSHomeDirectory())."
         }
         selectedModel = router.config.default
+        if let rawMode = UserDefaults.standard.string(forKey: "chatMode"),
+           let savedMode = RouterManager.ChatMode(rawValue: rawMode) {
+            chatMode = savedMode
+        } else {
+            chatMode = .fusion
+        }
 
         // One-time migration: move API key from UserDefaults → Keychain, then purge
         if KeychainHelper.shared.get(key: "OpenRouterAPIKey") == nil {
@@ -89,42 +98,76 @@ final class ChatViewModel: ObservableObject {
         let sysPrompt = systemPrompt.isEmpty ? nil : systemPrompt
         let tools: [[String: Any]]? = nil  // No tool calling for now
 
-        router.send(
-            messages: messagesArray,
-            systemPrompt: sysPrompt,
-            tools: tools,
-            onChunk: { [weak self] chunk in
-                DispatchQueue.main.async {
-                    self?.currentStreamingContent += chunk
+        switch chatMode {
+        case .fusion:
+            router.sendFusion(
+                messages: messagesArray,
+                systemPrompt: sysPrompt,
+                onChunk: { [weak self] chunk in
+                    DispatchQueue.main.async { self?.currentStreamingContent += chunk }
+                },
+                completion: { [weak self] result in
+                    DispatchQueue.main.async { self?.handleSendCompletion(result, errorPrefix: "Fusion") }
                 }
-            },
-            onToolCall: { [weak self] id, name, args in
-                DispatchQueue.main.async {
-                    guard let self = self else { return }
-                    if !self.activeToolCalls.contains(where: { $0.id == id }) {
-                        self.activeToolCalls.append(ToolCallDisplay(id: id, name: name, arguments: args))
-                    }
-                    self.executeTool(id: id, name: name, arguments: args)
+            )
+
+        case .fast:
+            router.sendFast(
+                messages: messagesArray,
+                systemPrompt: sysPrompt,
+                onChunk: { [weak self] chunk in
+                    DispatchQueue.main.async { self?.currentStreamingContent += chunk }
+                },
+                completion: { [weak self] result in
+                    DispatchQueue.main.async { self?.handleSendCompletion(result, errorPrefix: "Fast") }
                 }
-            },
-            completion: { [weak self] result in
-                DispatchQueue.main.async {
-                    guard let self = self else { return }
-                    self.isStreaming = false
-                    switch result {
-                    case .success(let txt):
-                        let finalText = txt.isEmpty ? self.currentStreamingContent : txt
-                        if !finalText.isEmpty {
-                            self.store.append(role: .assistant, content: finalText)
+            )
+
+        case .single:
+            router.send(
+                messages: messagesArray,
+                systemPrompt: sysPrompt,
+                tools: tools,
+                preferredModel: selectedModel.isEmpty ? nil : selectedModel,
+                onChunk: { [weak self] chunk in
+                    DispatchQueue.main.async { self?.currentStreamingContent += chunk }
+                },
+                onToolCall: { [weak self] id, name, args in
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        if !self.activeToolCalls.contains(where: { $0.id == id }) {
+                            self.activeToolCalls.append(ToolCallDisplay(id: id, name: name, arguments: args))
                         }
-                    case .failure(let err):
-                        self.store.append(role: .assistant, content: "❗️ Error: \(err.localizedDescription)")
+                        self.executeTool(id: id, name: name, arguments: args)
                     }
-                    self.currentStreamingContent = ""
-                    self.activeToolCalls = []
+                },
+                completion: { [weak self] result in
+                    DispatchQueue.main.async { self?.handleSendCompletion(result, errorPrefix: "") }
                 }
+            )
+        }
+    }
+
+    private func handleSendCompletion(_ result: Result<String, Error>, errorPrefix: String) {
+        isStreaming = false
+        switch result {
+        case .success(let txt):
+            let finalText = txt.isEmpty ? currentStreamingContent : txt
+            if !finalText.isEmpty {
+                let modeLabel: String
+                switch chatMode {
+                case .fusion: modeLabel = router.modelUsed.isEmpty ? "custom-fusion" : router.modelUsed
+                case .fast: modeLabel = router.modelUsed.isEmpty ? router.config.fastModel : router.modelUsed
+                case .single: modeLabel = router.modelUsed.isEmpty ? selectedModel : router.modelUsed
+                }
+                store.append(role: .assistant, content: finalText, modelUsed: modeLabel)
             }
-        )
+        case .failure(let err):
+            let prefix = errorPrefix.isEmpty ? "" : "\(errorPrefix) "
+            store.append(role: .assistant, content: "❗️ \(prefix)Error: \(err.localizedDescription)")
+        }
+        currentStreamingContent = ""
+        activeToolCalls = []
     }
 
     func stopStreaming() {
