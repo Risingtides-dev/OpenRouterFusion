@@ -12,16 +12,32 @@ final class RouterManager: ObservableObject {
     struct FusionConfig: Decodable {
         let enabled: Bool
         let panelModels: [String]
+        let plannerModel: String?
         let judgeModel: String?
+        let maxTasks: Int?
         let maxParallelRequests: Int?
         let responseTimeoutSeconds: Int?
+    }
+
+    struct FusionTask: Identifiable, Sendable {
+        let id = UUID()
+        let title: String
+        let prompt: String
     }
 
     struct FusionPanelResult: Identifiable, Sendable {
         let id = UUID()
         let model: String
+        let taskTitle: String?
         let content: String?
         let errorDescription: String?
+
+        init(model: String, taskTitle: String? = nil, content: String?, errorDescription: String?) {
+            self.model = model
+            self.taskTitle = taskTitle
+            self.content = content
+            self.errorDescription = errorDescription
+        }
 
         var succeeded: Bool {
             guard let content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
@@ -32,13 +48,13 @@ final class RouterManager: ObservableObject {
     enum ChatMode: String, CaseIterable {
         case fast = "fast"
         case fusion = "fusion"
-        case single = "single"
+        case solo = "solo"
 
         var displayName: String {
             switch self {
             case .fast: return "Fast"
             case .fusion: return "Fusion"
-            case .single: return "Single"
+            case .solo: return "Solo"
             }
         }
 
@@ -46,7 +62,7 @@ final class RouterManager: ObservableObject {
             switch self {
             case .fast: return "bolt.fill"
             case .fusion: return "sparkles"
-            case .single: return "cpu"
+            case .solo: return "person.fill"
             }
         }
     }
@@ -227,6 +243,44 @@ final class RouterManager: ObservableObject {
         }
     }
 
+    // MARK: - Solo mode: one explicit model
+
+    func sendSolo(
+        model selectedModel: String?,
+        messages: [[String: Any]],
+        systemPrompt: String?,
+        tools: [[String: Any]]?,
+        onChunk: @escaping (String) -> Void,
+        onToolCall: @escaping (String, String, String) -> Void,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        taskLock.lock()
+        guard !inFlight else {
+            taskLock.unlock()
+            completion(.failure(RouterError.allModelsExhausted))
+            return
+        }
+        inFlight = true
+        taskLock.unlock()
+
+        let model = selectedModel?.isEmpty == false ? selectedModel! : config.default
+        streamRequest(
+            model: model,
+            messages: messages,
+            systemPrompt: systemPrompt,
+            tools: tools,
+            onChunk: onChunk,
+            onToolCall: onToolCall,
+            completion: { [weak self] result in
+                self?.inFlight = false
+                if case .success = result {
+                    self?.modelUsed = model
+                }
+                completion(result)
+            }
+        )
+    }
+
     // MARK: - Fast mode: openrouter/free (random free model)
 
     func sendFast(
@@ -265,7 +319,7 @@ final class RouterManager: ObservableObject {
         }
     }
 
-    // MARK: - Fusion mode: custom client-side free model council
+    // MARK: - Fusion mode: custom task router + synthesis
 
     func sendFusion(
         messages: [[String: Any]],
@@ -274,7 +328,7 @@ final class RouterManager: ObservableObject {
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         guard let fusionConfig = config.fusion, fusionConfig.enabled, !fusionConfig.panelModels.isEmpty else {
-            NSLog("⚠️ Custom fusion not configured, falling back to single model")
+            NSLog("⚠️ Fusion Router not configured, falling back to solo model")
             send(messages: messages, systemPrompt: systemPrompt, tools: nil,
                  onChunk: onChunk, onToolCall: { _, _, _ in }, completion: completion)
             return
@@ -301,15 +355,40 @@ final class RouterManager: ObservableObject {
             do {
                 var seenModels = Set<String>()
                 let panelModels = fusionConfig.panelModels.filter { seenModels.insert($0).inserted }
+                let maxTasks = max(1, min(fusionConfig.maxTasks ?? panelModels.count, panelModels.count))
+                let timeout = fusionConfig.responseTimeoutSeconds ?? self.config.timeoutSeconds
+
                 await MainActor.run {
-                    onChunk("⚗️ **Custom Fusion Council** — querying \(panelModels.count) free models in parallel…\n\n")
+                    onChunk("🧭 **Fusion Router** — decomposing prompt into routed tasks…\n\n")
                 }
 
-                let results = await self.runFusionPanel(
-                    models: panelModels,
+                let fusionTasks = await self.planFusionTasks(
                     messages: messages,
                     systemPrompt: systemPrompt,
-                    timeoutSeconds: fusionConfig.responseTimeoutSeconds ?? self.config.timeoutSeconds
+                    fusionConfig: fusionConfig,
+                    maxTasks: maxTasks,
+                    timeoutSeconds: timeout
+                )
+
+                if Task.isCancelled {
+                    completion(.failure(RouterError.cancelled))
+                    return
+                }
+
+                await MainActor.run {
+                    for (index, task) in fusionTasks.enumerated() {
+                        let model = panelModels[index % panelModels.count]
+                        onChunk("`\(index + 1).` **\(task.title)** → \(ModelNamer.friendlyName(model))\n")
+                    }
+                    onChunk("\n⚗️ Running free-model task panel…\n\n")
+                }
+
+                let results = await self.runFusionTaskPanel(
+                    tasks: fusionTasks,
+                    models: panelModels,
+                    originalMessages: messages,
+                    systemPrompt: systemPrompt,
+                    timeoutSeconds: timeout
                 )
 
                 if Task.isCancelled {
@@ -321,19 +400,20 @@ final class RouterManager: ObservableObject {
                 let failures = results.filter { !$0.succeeded }
                 await MainActor.run {
                     for result in results {
+                        let taskLabel = result.taskTitle.map { "\($0) · " } ?? ""
                         if result.succeeded {
-                            onChunk("✅ `\(ModelNamer.friendlyName(result.model))` responded\n")
+                            onChunk("✅ `\(taskLabel)\(ModelNamer.friendlyName(result.model))` complete\n")
                         } else {
                             let error = result.errorDescription ?? "empty response"
-                            onChunk("⚠️ `\(ModelNamer.friendlyName(result.model))` skipped: \(error)\n")
+                            onChunk("⚠️ `\(taskLabel)\(ModelNamer.friendlyName(result.model))` skipped: \(error)\n")
                         }
                     }
                     onChunk("\n---\n\n")
                 }
 
                 guard !successes.isEmpty else {
-                    let details = failures.map { "- `\($0.model)`: \($0.errorDescription ?? "empty response")" }.joined(separator: "\n")
-                    completion(.failure(RouterError.httpError(statusCode: 502, body: "No fusion panel models returned usable content.\n\(details)")))
+                    let details = failures.map { "- `\($0.taskTitle ?? "Task")` / `\($0.model)`: \($0.errorDescription ?? "empty response")" }.joined(separator: "\n")
+                    completion(.failure(RouterError.httpError(statusCode: 502, body: "No fusion routed tasks returned usable content.\n\(details)")))
                     return
                 }
 
@@ -350,7 +430,7 @@ final class RouterManager: ObservableObject {
                     return
                 }
 
-                self.modelUsed = "Custom Fusion (\(successes.count)/\(panelModels.count))"
+                self.modelUsed = "Fusion Router (\(successes.count)/\(fusionTasks.count))"
                 await MainActor.run { onChunk(fused) }
                 completion(.success(fused))
             } catch is CancellationError {
@@ -365,39 +445,86 @@ final class RouterManager: ObservableObject {
         taskLock.unlock()
     }
 
-    private func runFusionPanel(
-        models: [String],
+    private func planFusionTasks(
         messages: [[String: Any]],
+        systemPrompt: String?,
+        fusionConfig: FusionConfig,
+        maxTasks: Int,
+        timeoutSeconds: Int
+    ) async -> [FusionTask] {
+        let plannerCandidates = [fusionConfig.plannerModel, fusionConfig.judgeModel, "openrouter/owl-alpha", "openrouter/free"]
+            .compactMap { $0 }
+            .reduce(into: [String]()) { acc, model in
+                if !acc.contains(model) { acc.append(model) }
+            }
+
+        let prompt = buildFusionPlanningPrompt(messages: messages, maxTasks: maxTasks)
+        let plannerMessages: [[String: Any]] = [["role": "user", "content": prompt]]
+
+        for planner in plannerCandidates {
+            if Task.isCancelled { return fallbackFusionTasks(messages: messages, maxTasks: maxTasks) }
+            do {
+                let rawPlan = try await completionRequest(
+                    model: planner,
+                    messages: plannerMessages,
+                    systemPrompt: systemPrompt ?? "You are a routing planner. Decompose prompts into concise, non-overlapping analysis tasks.",
+                    timeoutSeconds: timeoutSeconds
+                )
+                let tasks = parseFusionTasks(from: rawPlan, maxTasks: maxTasks)
+                if !tasks.isEmpty {
+                    NSLog("🧭 Fusion planner \(planner) produced \(tasks.count) tasks")
+                    return tasks
+                }
+            } catch {
+                NSLog("⚠️ Fusion planner \(planner) failed: \(error.localizedDescription)")
+                continue
+            }
+        }
+
+        return fallbackFusionTasks(messages: messages, maxTasks: maxTasks)
+    }
+
+    private func runFusionTaskPanel(
+        tasks: [FusionTask],
+        models: [String],
+        originalMessages: [[String: Any]],
         systemPrompt: String?,
         timeoutSeconds: Int
     ) async -> [FusionPanelResult] {
         await withTaskGroup(of: FusionPanelResult.self) { group in
-            for model in models {
+            for (index, task) in tasks.enumerated() {
+                let model = models[index % models.count]
                 group.addTask { [weak self] in
                     guard let self = self else {
-                        return FusionPanelResult(model: model, content: nil, errorDescription: "router released")
+                        return FusionPanelResult(model: model, taskTitle: task.title, content: nil, errorDescription: "router released")
                     }
                     do {
+                        let taskMessages = self.buildFusionTaskMessages(
+                            task: task,
+                            originalMessages: originalMessages
+                        )
                         let content = try await self.completionRequest(
                             model: model,
-                            messages: messages,
+                            messages: taskMessages,
                             systemPrompt: systemPrompt,
                             timeoutSeconds: timeoutSeconds
                         )
-                        return FusionPanelResult(model: model, content: content, errorDescription: nil)
+                        return FusionPanelResult(model: model, taskTitle: task.title, content: content, errorDescription: nil)
                     } catch is CancellationError {
-                        return FusionPanelResult(model: model, content: nil, errorDescription: RouterError.cancelled.localizedDescription)
+                        return FusionPanelResult(model: model, taskTitle: task.title, content: nil, errorDescription: RouterError.cancelled.localizedDescription)
                     } catch {
-                        return FusionPanelResult(model: model, content: nil, errorDescription: error.localizedDescription)
+                        return FusionPanelResult(model: model, taskTitle: task.title, content: nil, errorDescription: error.localizedDescription)
                     }
                 }
             }
 
-            var byModel: [String: FusionPanelResult] = [:]
+            var ordered: [FusionPanelResult] = []
             for await result in group {
-                byModel[result.model] = result
+                ordered.append(result)
             }
-            return models.compactMap { byModel[$0] }
+            return tasks.compactMap { task in
+                ordered.first { $0.taskTitle == task.title }
+            }
         }
     }
 
@@ -415,10 +542,7 @@ final class RouterManager: ObservableObject {
             }
 
         let prompt = buildFusionJudgePrompt(successes: successes, failures: failures, originalMessages: originalMessages)
-        let judgeMessages: [[String: Any]] = [[
-            "role": "user",
-            "content": prompt
-        ]]
+        let judgeMessages: [[String: Any]] = [["role": "user", "content": prompt]]
 
         for judge in judgeCandidates {
             if Task.isCancelled { return localFusionSummary(successes: successes, failures: failures, judgeError: RouterError.cancelled.localizedDescription) }
@@ -426,12 +550,12 @@ final class RouterManager: ObservableObject {
                 let synthesized = try await completionRequest(
                     model: judge,
                     messages: judgeMessages,
-                    systemPrompt: systemPrompt ?? "You are a careful synthesis judge. Fuse multiple model answers into one concise, useful answer.",
+                    systemPrompt: systemPrompt ?? "You are a synthesis compiler. Merge routed task results into one answer.",
                     timeoutSeconds: config.timeoutSeconds
                 )
                 let trimmed = synthesized.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
-                    return "## Fusion Synthesis\n\n\(trimmed)\n\n---\n\n`Judge: \(ModelNamer.friendlyName(judge)) · Panel: \(successes.count) succeeded, \(failures.count) failed`"
+                    return "## Fusion Synthesis\n\n\(trimmed)\n\n---\n\n`Judge: \(ModelNamer.friendlyName(judge)) · Routed tasks: \(successes.count) succeeded, \(failures.count) failed`"
                 }
             } catch {
                 NSLog("⚠️ Fusion judge \(judge) failed: \(error.localizedDescription)")
@@ -442,45 +566,84 @@ final class RouterManager: ObservableObject {
         return localFusionSummary(successes: successes, failures: failures, judgeError: "judge models unavailable")
     }
 
+    private func buildFusionPlanningPrompt(messages: [[String: Any]], maxTasks: Int) -> String {
+        let conversation = compactConversation(messages)
+        return """
+        You are the planner for a custom Fusion Router.
+
+        Decompose the user's request into up to \(maxTasks) non-overlapping tasks/angles that can be answered independently by different free LLMs, then later synthesized.
+
+        Rules:
+        - If the request is simple, return 1 task.
+        - Use specialized angles only when useful: direct answer, implementation, risks, alternatives, verification, edge cases.
+        - Each task prompt must be self-contained and actionable.
+        - Return JSON only. No markdown fences.
+
+        Schema:
+        {"tasks":[{"title":"short title","prompt":"specific task prompt"}]}
+
+        Conversation:
+        \(conversation)
+        """
+    }
+
+    private func buildFusionTaskMessages(task: FusionTask, originalMessages: [[String: Any]]) -> [[String: Any]] {
+        let conversation = compactConversation(originalMessages)
+        return [[
+            "role": "user",
+            "content": """
+            You are one worker in a custom Fusion Router. Complete only the assigned task. Be concise, concrete, and flag uncertainty.
+
+            # Original conversation
+            \(conversation)
+
+            # Assigned task
+            \(task.title)
+
+            \(task.prompt)
+            """
+        ]]
+    }
+
     private func buildFusionJudgePrompt(
         successes: [FusionPanelResult],
         failures: [FusionPanelResult],
         originalMessages: [[String: Any]]
     ) -> String {
-        let userTurns = originalMessages.compactMap { msg -> String? in
-            guard let role = msg["role"] as? String,
-                  let content = msg["content"] as? String else { return nil }
-            return "\(role.uppercased()): \(content)"
-        }.joined(separator: "\n\n")
+        let conversation = compactConversation(originalMessages)
 
-        let panelText = successes.map { result in
+        let routedText = successes.map { result in
             """
-            ## \(result.model)
+            ## Task: \(result.taskTitle ?? "General")
+            Model: \(result.model)
+
             \(result.content ?? "")
             """
         }.joined(separator: "\n\n---\n\n")
 
         let failureText = failures.isEmpty ? "None" : failures.map {
-            "- \($0.model): \($0.errorDescription ?? "empty response")"
+            "- \($0.taskTitle ?? "Task") / \($0.model): \($0.errorDescription ?? "empty response")"
         }.joined(separator: "\n")
 
         return """
-        We are running a custom free-model fusion council. The same user request was sent to multiple free OpenRouter models.
+        You are the synthesis compiler for a custom Fusion Router.
 
-        Your task: synthesize the successful panel outputs into ONE best answer. Do not mention implementation details unless useful. Preserve correct details, discard weak/duplicative claims, and explicitly flag contradictions only if they matter.
+        The user's request was decomposed into tasks, routed to free models, and the successful task outputs are below. Compile them into ONE best answer.
 
-        Return markdown with:
-        1. A direct answer first.
-        2. A short "Consensus" section if there is real agreement.
-        3. A short "Differences / caveats" section only if needed.
+        Rules:
+        - Answer the original user directly first.
+        - Integrate useful details across task outputs.
+        - Remove duplication and low-confidence noise.
+        - Mention contradictions/caveats only when they change the answer.
+        - Do not over-explain the routing process.
 
-        # Conversation
-        \(userTurns)
+        # Original conversation
+        \(conversation)
 
-        # Successful panel outputs
-        \(panelText)
+        # Successful routed task outputs
+        \(routedText)
 
-        # Failed/skipped panel models
+        # Failed/skipped routed tasks
         \(failureText)
         """
     }
@@ -492,7 +655,8 @@ final class RouterManager: ObservableObject {
     ) -> String {
         let rawAnswers = successes.map { result in
             """
-            ### \(ModelNamer.friendlyName(result.model))
+            ### \(result.taskTitle ?? ModelNamer.friendlyName(result.model))
+            `\(ModelNamer.friendlyName(result.model))`
 
             \(result.content ?? "")
             """
@@ -500,24 +664,75 @@ final class RouterManager: ObservableObject {
 
         let failureBlock = failures.isEmpty ? "" : """
 
-        ## Skipped models
-        \(failures.map { "- `\($0.model)`: \($0.errorDescription ?? "empty response")" }.joined(separator: "\n"))
+        ## Skipped tasks
+        \(failures.map { "- `\($0.taskTitle ?? "Task")` / `\($0.model)`: \($0.errorDescription ?? "empty response")" }.joined(separator: "\n"))
         """
 
         return """
-        ## Fusion Council Results
+        ## Fusion Router Results
 
-        The judge synthesis step was unavailable (`\(judgeError)`), so here are the successful free-model council responses for manual comparison.
+        The synthesis step was unavailable (`\(judgeError)`), so here are the successful routed task outputs.
 
-        ## Successful responses
+        ## Successful routed outputs
 
         \(rawAnswers)
         \(failureBlock)
 
         ---
 
-        `Custom Fusion · \(successes.count) succeeded, \(failures.count) failed`
+        `Fusion Router · \(successes.count) succeeded, \(failures.count) failed`
         """
+    }
+
+    private func parseFusionTasks(from raw: String, maxTasks: Int) -> [FusionTask] {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let jsonCandidate = extractJSONObject(from: trimmed) ?? trimmed
+        guard let data = jsonCandidate.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let taskObjects = root["tasks"] as? [[String: Any]] else {
+            return []
+        }
+
+        return taskObjects.prefix(maxTasks).compactMap { object in
+            guard let title = object["title"] as? String,
+                  let prompt = object["prompt"] as? String else { return nil }
+            let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanTitle.isEmpty, !cleanPrompt.isEmpty else { return nil }
+            return FusionTask(title: cleanTitle, prompt: cleanPrompt)
+        }
+    }
+
+    private func fallbackFusionTasks(messages: [[String: Any]], maxTasks: Int) -> [FusionTask] {
+        let latestUser = latestUserMessage(from: messages) ?? compactConversation(messages)
+        let defaults = [
+            FusionTask(title: "Direct answer", prompt: "Answer the user's request directly and practically. User request:\n\(latestUser)"),
+            FusionTask(title: "Critical check", prompt: "Review the request for hidden assumptions, risks, edge cases, or missing constraints. User request:\n\(latestUser)"),
+            FusionTask(title: "Action plan", prompt: "Produce a concrete implementation or action plan for the user's request. User request:\n\(latestUser)"),
+            FusionTask(title: "Alternatives", prompt: "Identify viable alternative approaches and tradeoffs for the user's request. User request:\n\(latestUser)")
+        ]
+        return Array(defaults.prefix(maxTasks))
+    }
+
+    private func compactConversation(_ messages: [[String: Any]]) -> String {
+        messages.compactMap { msg -> String? in
+            guard let role = msg["role"] as? String,
+                  let content = msg["content"] as? String else { return nil }
+            return "\(role.uppercased()): \(content)"
+        }.joined(separator: "\n\n")
+    }
+
+    private func latestUserMessage(from messages: [[String: Any]]) -> String? {
+        messages.reversed().compactMap { msg -> String? in
+            guard let role = msg["role"] as? String, role == "user",
+                  let content = msg["content"] as? String else { return nil }
+            return content
+        }.first
+    }
+
+    private func extractJSONObject(from text: String) -> String? {
+        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start <= end else { return nil }
+        return String(text[start...end])
     }
 
     private func completionRequest(

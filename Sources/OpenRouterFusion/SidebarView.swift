@@ -20,8 +20,8 @@ struct SidebarView: View {
             // Chat Mode Toggle
             chatModeSection
             
-            // Model Picker (only in single mode)
-            if vm.chatMode == .single {
+            // Model Picker (only in solo mode)
+            if vm.chatMode == .solo {
                 modelPickerSection
             }
             
@@ -128,8 +128,8 @@ struct SidebarView: View {
         case .fast:
             return "One random free model via OpenRouter's free router."
         case .fusion:
-            return "Our own free-model council: parallel panel + local synthesis."
-        case .single:
+            return "Router decomposes prompt into tasks, fans out to free models, then synthesizes."
+        case .solo:
             return "Use one explicit model from the picker below."
         }
     }

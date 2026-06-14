@@ -27,7 +27,7 @@ final class ChatViewModel: ObservableObject {
     @Published var showingSessionsList: Bool = false
     @Published var toolCommand: String = ""
 
-    // MARK: - Chat mode (fast / fusion / single)
+    // MARK: - Chat mode (fast / fusion / solo)
 
     @Published var chatMode: RouterManager.ChatMode = .fusion {
         didSet { UserDefaults.standard.set(chatMode.rawValue, forKey: "chatMode") }
@@ -53,6 +53,11 @@ final class ChatViewModel: ObservableObject {
         } else {
             systemPrompt = "You are a helpful AI assistant running on a macOS machine. Your home directory is \(NSHomeDirectory())."
         }
+        // Restore mode, migrating the old "single" value to "solo".
+        if let savedMode = UserDefaults.standard.string(forKey: "chatMode") {
+            chatMode = RouterManager.ChatMode(rawValue: savedMode == "single" ? "solo" : savedMode) ?? .fusion
+        }
+
         // Use "" for Auto model selection to avoid picker mismatch; default is handled by RouterManager
         selectedModel = ""
 
@@ -103,8 +108,8 @@ final class ChatViewModel: ObservableObject {
 
         switch chatMode {
         case .fusion:
-            // Fusion mode: custom client-side free-model council + synthesis
-            NSLog("🔥 Fusion mode: sending to custom free-model council")
+            // Fusion mode: custom router: decompose prompt into tasks, fan out, synthesize
+            NSLog("🔥 Fusion mode: sending to Fusion Router")
             router.sendFusion(
                 messages: messagesArray,
                 systemPrompt: sysPrompt,
@@ -149,9 +154,10 @@ final class ChatViewModel: ObservableObject {
                 }
             )
 
-        case .single:
-            // Single model mode: use selected model or default
-            router.send(
+        case .solo:
+            // Solo model mode: use exactly the selected model, or config default for Auto
+            router.sendSolo(
+                model: selectedModel,
                 messages: messagesArray,
                 systemPrompt: sysPrompt,
                 tools: nil,

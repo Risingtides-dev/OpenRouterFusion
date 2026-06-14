@@ -18,7 +18,9 @@
       "nvidia/nemotron-3-super-120b-a12b:free",
       "qwen/qwen3-coder:free"
     ],
+    "plannerModel": "openrouter/owl-alpha",
     "judgeModel": "openrouter/owl-alpha",
+    "maxTasks": 5,
     "maxParallelRequests": 5,
     "responseTimeoutSeconds": 60
   }
