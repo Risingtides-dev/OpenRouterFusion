@@ -1,7 +1,7 @@
 import SwiftUI
 
 // MARK: - ChatLogView
-// Scrollable chat message list with auto-scroll and streaming indicator
+// Scrollable chat message list with auto-scroll, streaming indicator, and fusion session display
 
 struct ChatLogView: View {
     @ObservedObject var vm: ChatViewModel
@@ -13,7 +13,10 @@ struct ChatLogView: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     // Message history
                     ForEach(vm.store.messages) { msg in
-                        ChatMessageView(message: msg)
+                        ChatMessageView(
+                            message: msg,
+                            onPreviewHTML: { html in vm.showPreview(html: html) }
+                        )
                             .id(msg.id)
                     }
                     
@@ -22,11 +25,18 @@ struct ChatLogView: View {
                         ToolCallIndicator(toolCall: tc)
                             .id("tool-\(tc.id)")
                     }
+
+                    // Active fusion session (shown inline during fusion mode)
+                    if let session = vm.fusionSession {
+                        FusionSessionView(session: session)
+                            .id("fusion-\(session.id)")
+                    }
                     
-                    // Streaming content (in-progress assistant response)
-                    if vm.isStreaming {
+                    // Non-fusion streaming content (fast/single mode)
+                    if vm.isStreaming && vm.fusionSession == nil {
                         ChatMessageView(
-                            message: ChatMessage(role: .assistant, content: vm.currentStreamingContent)
+                            message: ChatMessage(role: .assistant, content: vm.currentStreamingContent),
+                            onPreviewHTML: nil
                         )
                         .id("streaming")
                     }
@@ -42,7 +52,6 @@ struct ChatLogView: View {
                 }
             }
             .onChange(of: vm.currentStreamingContent) {
-                // Debounce scroll updates during streaming to avoid excessive layout passes
                 scrollDebouncer.debounce {
                     withAnimation(.easeOut(duration: 0.1)) {
                         proxy.scrollTo("streaming", anchor: .bottom)
@@ -53,6 +62,29 @@ struct ChatLogView: View {
                 withAnimation(.easeOut(duration: 0.2)) {
                     if let last = vm.activeToolCalls.last {
                         proxy.scrollTo("tool-\(last.id)", anchor: .bottom)
+                    }
+                }
+            }
+            // Scroll to fusion session when it appears or updates
+            .onChange(of: vm.fusionSession?.panelResults.count) {
+                if vm.fusionSession != nil {
+                    scrollDebouncer.debounce {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            if let session = vm.fusionSession {
+                                proxy.scrollTo("fusion-\(session.id)", anchor: .bottom)
+                            }
+                        }
+                    }
+                }
+            }
+            .onChange(of: vm.fusionSession?.synthesisContent) {
+                if vm.fusionSession != nil {
+                    scrollDebouncer.debounce {
+                        withAnimation(.easeOut(duration: 0.1)) {
+                            if let session = vm.fusionSession {
+                                proxy.scrollTo("fusion-\(session.id)", anchor: .bottom)
+                            }
+                        }
                     }
                 }
             }

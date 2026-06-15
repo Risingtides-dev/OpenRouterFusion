@@ -7,3 +7,6 @@ DerivedData/
 .swiftpm/
 tool-server.cjs
 tool-server.mjs
+.DS_Store
+agent-engine/node_modules/
+agent-engine/package-lock.json
