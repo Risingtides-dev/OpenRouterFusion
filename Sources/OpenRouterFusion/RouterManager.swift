@@ -365,16 +365,25 @@ final class RouterManager: ObservableObject {
     /// Accepts the full judge conversation for iterative, multi-turn fusion.
     func sendFusionEvents(
         messages: [[String: Any]],
-        systemPrompt: String?
+        systemPrompt: String?,
+        panelModels: [String]? = nil,
+        judgeModel: String? = nil
     ) -> AsyncStream<FusionEvent> {
-        sendIterativeFusionEvents(judgeConversation: messages, systemPrompt: systemPrompt)
+        sendIterativeFusionEvents(
+            judgeConversation: messages,
+            systemPrompt: systemPrompt,
+            panelModels: panelModels,
+            judgeModel: judgeModel
+        )
     }
 
     /// Iterative fusion: the judge is an agent that can request panel passes.
     /// Pass the full conversation history (including prior panel results and synthesis).
     func sendIterativeFusionEvents(
         judgeConversation: [[String: Any]],
-        systemPrompt: String?
+        systemPrompt: String?,
+        panelModels: [String]? = nil,
+        judgeModel: String? = nil
     ) -> AsyncStream<FusionEvent> {
         AsyncStream { continuation in
             // Auto-cancel stale in-flight request
@@ -394,7 +403,7 @@ final class RouterManager: ObservableObject {
                     return
                 }
 
-                let panel = self.freeFusionPanel()
+                let panel = panelModels ?? self.freeFusionPanel()
                 NSLog("🧠 Fusion: asking \(panel.count) free models in parallel: \(panel.joined(separator: ", "))")
                 continuation.yield(.panelStarted(models: panel))
 
@@ -439,7 +448,8 @@ final class RouterManager: ObservableObject {
                     },
                     onModel: { model in
                         continuation.yield(.synthesisModel(model))
-                    }
+                    },
+                    preferredJudge: judgeModel
                 )
 
                 if Task.isCancelled {
@@ -512,11 +522,13 @@ final class RouterManager: ObservableObject {
         messages: [[String: Any]],
         panelResults: [FusionPanelResult],
         onChunk: @escaping (String) -> Void,
-        onModel: @escaping (String) -> Void
+        onModel: @escaping (String) -> Void,
+        preferredJudge: String? = nil
     ) async -> (text: String, modelUsed: String) {
         let successful = panelResults.filter(\.succeeded)
         let judgeMessages = buildJudgeMessages(originalMessages: messages, successfulResults: successful)
-        let judgeCandidates = dedupe([config.fusionJudgeModel, config.fastModel, "openrouter/free"])
+        let judgePrimary = preferredJudge ?? config.fusionJudgeModel
+        let judgeCandidates = dedupe([judgePrimary, config.fusionJudgeModel, config.fastModel, "openrouter/free"])
 
         for judgeModel in judgeCandidates {
             if Task.isCancelled { break }

@@ -131,16 +131,40 @@ struct SidebarView: View {
 
     private var fusionPanelSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            MetalText("FREE FUSION PANEL")
+            MetalText("FUSION PRESET")
+
+            // Preset picker
+            Picker("Preset", selection: Binding(
+                get: { vm.activePreset?.id ?? "default" },
+                set: { newId in
+                    if newId == "default" {
+                        vm.activePreset = nil
+                    } else {
+                        vm.activePreset = vm.presetStore.presets.first { $0.id == newId }
+                    }
+                }
+            )) {
+                Text("Default (Config)").tag("default")
+                ForEach(vm.presetStore.presets) { preset in
+                    Text(preset.name).tag(preset.id)
+                }
+            }
+            .pickerStyle(.menu)
+            .accentColor(.lrmAccent)
+
+            // Show active preset models
+            let models = vm.activePreset?.models ?? vm.router.config.fusionPanel
+            let judge = vm.activePreset?.judgeModel ?? vm.router.config.fusionJudgeModel
+
             VStack(alignment: .leading, spacing: 3) {
-                ForEach(vm.router.config.fusionPanel, id: \.self) { model in
+                ForEach(models, id: \.self) { model in
                     Text("• \(ModelNamer.friendlyName(model))")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(.lrmMuted)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                Text("Judge: \(ModelNamer.friendlyName(vm.router.config.fusionJudgeModel))")
+                Text("Judge: \(ModelNamer.friendlyName(judge))")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundColor(.lrmAccent)
                     .padding(.top, 2)

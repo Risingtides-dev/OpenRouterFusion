@@ -219,7 +219,12 @@ final class ChatViewModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
-            let eventStream = self.router.sendFusionEvents(messages: messages, systemPrompt: systemPrompt)
+            let eventStream = self.router.sendFusionEvents(
+                messages: messages,
+                systemPrompt: systemPrompt,
+                panelModels: self.activePreset?.models,
+                judgeModel: self.activePreset?.judgeModel
+            )
 
             for await event in eventStream {
                 switch event {
