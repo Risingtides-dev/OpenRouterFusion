@@ -159,18 +159,19 @@ final class ChatViewModel: ObservableObject {
         let messagesArray = store.messages.map { msg in
             ["role": msg.role.rawValue, "content": msg.content]
         }
-        let sysPrompt = systemPrompt.isEmpty ? nil : systemPrompt
+        let sidebarPrompt = systemPrompt.isEmpty ? nil : systemPrompt
 
         switch chatMode {
         case .fusion:
-            sendFusionEventDriven(messages: messagesArray, systemPrompt: sysPrompt)
+            let fusionPrompt = activePreset?.systemPrompt ?? sidebarPrompt
+            sendFusionEventDriven(messages: messagesArray, systemPrompt: fusionPrompt)
 
         case .fast:
             isStreaming = true
             currentStreamingContent = ""
             router.sendFast(
                 messages: messagesArray,
-                systemPrompt: sysPrompt,
+                systemPrompt: sidebarPrompt,
                 onChunk: { [weak self] chunk in
                     DispatchQueue.main.async { self?.currentStreamingContent += chunk }
                 },
@@ -185,7 +186,7 @@ final class ChatViewModel: ObservableObject {
             let tools: [[String: Any]]? = nil
             router.send(
                 messages: messagesArray,
-                systemPrompt: sysPrompt,
+                systemPrompt: sidebarPrompt,
                 tools: tools,
                 preferredModel: selectedModel.isEmpty ? nil : selectedModel,
                 onChunk: { [weak self] chunk in
@@ -206,7 +207,7 @@ final class ChatViewModel: ObservableObject {
             )
 
         case .agent:
-            sendAgentMessage(messages: store.messages.map { (role: $0.role.rawValue, content: $0.content) }, systemPrompt: sysPrompt)
+            sendAgentMessage(messages: store.messages.map { (role: $0.role.rawValue, content: $0.content) }, systemPrompt: sidebarPrompt)
         }
     }
 
